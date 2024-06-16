@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "redis-rag-workbench"
+version = "0.1.0"
+description = "Redis RAG Workbench - A RAG/Redis Playground"
+authors = ["Brian Sam-Bodden <bsb@redis.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
