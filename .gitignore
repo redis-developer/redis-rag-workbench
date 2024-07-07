@@ -304,7 +304,8 @@ flycheck_*.el
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*
@@ -354,3 +355,6 @@ Temporary Items
 pyvenv.cfg
 .venv
 pip-selfcheck.json
+
+# configuration file
+config.yaml

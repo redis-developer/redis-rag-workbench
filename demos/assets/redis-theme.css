@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono&display=swap');
+
+/* Color Definitions */
+:root {
+  --white: #FFFFFF;
+  --redis-red: #FF4438;
+  --black: #000000;
+  --black-90p: #191919;
+  --black-70p: #4c4c4c;
+  --black-50p: #808080;
+  --black-30p: #B2B2B2;
+  --black-10p: #E5E5E5;
+  --light-gray: #F0F0F0;
+  --midnight: #091A23;
+  --dusk: #163341;
+  --dusk-90p: #2D4754;
+  --dusk-70p: #5C707A;
+  --dusk-50p: #8A99A0;
+  --dusk-30p: #B9C2C6;
+  --dusk-10p: #E8EBEC;
+  --violet: #C795E3;
+  --violet-50p: #E3CAF1;
+  --violet-10p: #F9F4FC;
+  --sky-blue: #80DBFF;
+  --sky-blue-50p: #BFEDFF;
+  --sky-blue-10p: #F2FBFF;
+  --yellow: #DCFF1E;
+  --yellow-40p: #F1FFA5;
+  --yellow-10p: #FBFFE8;
+}
+
+body {
+  font-family: 'Space Grotesk', sans-serif;
+  background-color: var(--midnight);
+  color: var(--white);
+}
+
+button {
+  font-family: 'Space Mono', monospace;
+  /* border: 1px solid var(--yellow);
+  background-color: var(--yellow); */
+  color: var(--midnight);
+  transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+}
+
+button:hover {
+  background-color: var(--dusk);
+  color: white;
+  border-color: var(--midnight);
+}
+
+button.primary {
+  background-color: var(--yellow);
+  border: 1px solid var(--yellow);
+  color: var(--midnight);
+  transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+}
+
+button.primary:hover {
+  background-color: var(--midnight);
+  color: var(--white);
+  border-color: var(--midnight);
+}
+
+button.label-wrap {
+  background-color: var(--col);
+  color: var(--white);
+  border-color: var(--col);
+  font-family: 'Space Grotesk', sans-serif;
+  text-transform: uppercase;
+}
+
+button.secondary {
+  background-color: var(--dusk-70p);
+  color: white;
+}
+
+button.secondary:hover {
+  background-color: var(--dusk-90p);
+  color: white;
+}
+
+button.confidence-set {
+  color: white;
+  background-color: var(--col);
+  border-color: var(--col);
+}
+
+dl.label:hover {
+  color: var(--violet);
+}
+
+button:has(.image-container) {
+  background-color: var(--midnight);
+  border-color: var(--col);
+}
+
