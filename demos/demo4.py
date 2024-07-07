@@ -1,5 +1,4 @@
 import gradio as gr
-import time
 import os.path
 from typing import Tuple
 
@@ -20,42 +19,29 @@ def load_theme(name: str) -> Tuple[gr.Theme, str]:
         open(theme_css_path, encoding="UTF-8").read(),
     )
 
-def demo2_app():
+def demo4_app():
     _LOCAL_CSS = """
     """
 
-    def demo2_fn(text):
-        return f"Demo 2: {text}"
+    def demo4_fn(text):
+        return f"Demo 4: {text}"
 
     redis_theme, redis_styles = load_theme("redis")
 
-    with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo2:
+    with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo4:
         gr.HTML("<button class='primary' onclick=\"window.location.href='/demos'\">Back to Demos</button>")
         input_text = gr.Textbox(label="Enter something", placeholder="Type here...")
         output_text = gr.Text(label="Output")
+        input_text.change(fn=demo4_fn, inputs=input_text, outputs=output_text)
 
-        textbox = gr.Textbox(label="Name")
-        input_text.change(fn=demo2_fn, inputs=input_text, outputs=output_text)
-
-        slider = gr.Slider(label="Count", minimum=0, maximum=100, step=1)
-        with gr.Row():
-            button = gr.Button("Submit", variant="primary")
-            clear = gr.Button("Clear")
-        output = gr.Textbox(label="Output")
-
-        def repeat(name, count):
-            time.sleep(3)
-            return name * count
-
-        button.click(repeat, [textbox, slider], output)
+    return demo4
 
 
-    return demo2
 
-demo = demo2_app()
+demo = demo4_app()
 
 def app_title():
-    return "Gradio Test Page"
+    return "Another Demo"
 
 def path():
-    return "/test_page"
+    return "/another_demo"

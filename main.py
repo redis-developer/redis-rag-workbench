@@ -3,7 +3,7 @@ import gradio as gr
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from demos import demo1, demo2, demo3
+from demos import demo1, demo2, demo3, demo4, chat_with_pdf
 
 app = FastAPI()
 
@@ -55,9 +55,9 @@ def navigation():
         with gr.Column(elem_id="centered-container"):
             gr.Markdown("## Demo List")
             with gr.Column(elem_id="scrollable-list"):
-                demos = ["demo1", "demo2", "demo3"]
+                demos = [demo1, demo2, demo3, demo4, chat_with_pdf]
                 for demo in demos:
-                    gr.HTML(f"<button onclick=\"window.location.href='/{demo}'\">{demo}</button>")
+                    gr.HTML(f"<button onclick=\"window.location.href='{demo.path()}'\">{demo.app_title()}</button>")
 
     return demo_list
 
@@ -65,9 +65,11 @@ demo_list_app = navigation()
 app.mount("/demos", gr.mount_gradio_app(app, demo_list_app, path="/demos"))
 
 # Mount individual Gradio demo apps
-app.mount("/demo1", gr.mount_gradio_app(app, demo1.demo, path="/demo1"))
-app.mount("/demo2", gr.mount_gradio_app(app, demo2.demo, path="/demo2"))
-app.mount("/demo3", gr.mount_gradio_app(app, demo3.demo, path="/demo3"))
+app.mount(demo1.path(), gr.mount_gradio_app(app, demo1.demo, path=demo1.path()))
+app.mount(demo2.path(), gr.mount_gradio_app(app, demo2.demo, path=demo2.path()))
+app.mount(demo3.path(), gr.mount_gradio_app(app, demo3.demo, path=demo3.path()))
+app.mount(demo4.path(), gr.mount_gradio_app(app, demo4.demo, path=demo4.path()))
+app.mount(chat_with_pdf.path(), gr.mount_gradio_app(app, chat_with_pdf.demo, path=chat_with_pdf.path()))
 
 @app.get("/")
 async def root():

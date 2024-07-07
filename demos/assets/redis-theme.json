@@ -1,0 +1,79 @@
+{
+  "theme": {
+    "font": [
+      {
+        "__gradio_font__": true,
+        "name": "Space Grotesk",
+        "class": "google"
+      },
+      {
+        "__gradio_font__": true,
+        "name": "ui-sans-serif",
+        "class": "font"
+      },
+      {
+        "__gradio_font__": true,
+        "name": "system-ui",
+        "class": "font"
+      },
+      {
+        "__gradio_font__": true,
+        "name": "sans-serif",
+        "class": "font"
+      }
+    ],
+    "font_mono": [
+      {
+        "__gradio_font__": true,
+        "name": "Space Mono",
+        "class": "google"
+      },
+      {
+        "__gradio_font__": true,
+        "name": "ui-monospace",
+        "class": "font"
+      },
+      {
+        "__gradio_font__": true,
+        "name": "Consolas",
+        "class": "font"
+      },
+      {
+        "__gradio_font__": true,
+        "name": "monospace",
+        "class": "font"
+      }
+    ],
+    "stylesheets": [
+      "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap",
+      "https://fonts.googleapis.com/css2?family=Space+Mono&display=swap"
+    ],
+    "background_fill_primary": "#091A23",
+    "background_fill_secondary": "#163341",
+    "background_fill_primary_dark": "#091A23",
+    "background_fill_secondary_dark": "#163341",
+    "button_primary_background_fill": "#DCFF1E",
+    "button_primary_background_fill_dark": "#DCFF1E",
+    "button_primary_text_color": "#091A23",
+    "button_primary_text_color_dark": "#091A23",
+    "button_primary_hover_background_fill": "#091A23",
+    "button_primary_hover_background_fill_dark": "#091A23",
+    "button_primary_hover_text_color": "#FFFFFF",
+    "button_primary_hover_text_color_dark": "#FFFFFF",
+    "button_primary_background_fill_hover": "#091A23",
+    "button_primary_border_color_hover": "#091A23",
+    "button_secondary_background_fill": "#5C707A",
+    "button_secondary_background_fill_hover": "#2D4754",
+    "button_primary_background_fill_hover_dark": "#2D4754",
+    "button_secondary_border_color": "#5C707A",
+    "button_secondary_border_color_hover": "#2D4754",
+    "button_secondary_text_color": "white",
+    "button_secondary_text_color_hover": "white",
+    "stat_background_fill": "#C795E3",
+    "stat_background_fill_dark": "#C795E3",
+    "panel_border_color_dark": "#8A99A0",
+    "panel_border_width_dark": "1px",
+    "panel_background_fill_dark": "#091A23",
+    "prose-header-text-weight": "400"
+  }
+}
