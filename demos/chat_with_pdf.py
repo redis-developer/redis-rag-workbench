@@ -4,7 +4,7 @@ import time
 import yaml
 import gradio as gr
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Redis
+from langchain_redis import RedisVectorStore
 
 from langchain_openai import ChatOpenAI
 from langchain_community.callbacks import get_openai_callback
@@ -210,7 +210,7 @@ class my_app:
         print(f"DEBUG: Creating vector store with index name: {index_name}")
         # Load embeddings model
         embeddings = OpenAIEmbeddings(api_key=self.OPENAI_API_KEY)
-        self.vector_store = Redis.from_documents(
+        self.vector_store = RedisVectorStore.from_documents(
             documents,
             embeddings,
             redis_url=self.redis_url,
