@@ -1,5 +1,4 @@
-import json
-from typing import Any, Optional
+from typing import Any
 import time
 import yaml
 import gradio as gr
@@ -8,26 +7,18 @@ from langchain_redis import RedisVectorStore
 
 from langchain_openai import ChatOpenAI
 from langchain_community.callbacks import get_openai_callback
-from langchain_community.document_loaders import PyPDFLoader
 
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-from langchain_core.prompt_values import StringPromptValue
 from langchain_core.runnables import RunnableSequence
 
-import fitz
-from PIL import Image
 
-import re
 import os.path
-from typing import Tuple
 
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.utils.rerank import HFCrossEncoderReranker, CohereReranker
-from langchain_core.runnables.base import Runnable
-from langchain_core.runnables.config import RunnableConfig
 
 from ragas.metrics import faithfulness, answer_relevancy
 from ragas.integrations.langchain import EvaluatorChain
@@ -36,6 +27,7 @@ from langchain_openai import ChatOpenAI
 
 from shared_components.theme_management import load_theme
 from shared_components.cached_llm import CachedLLM
+from shared_components.pdf_utils import process_file, render_file, render_first_page
 
 import os
 
@@ -142,17 +134,9 @@ class my_app:
                 print(f"Error loading configuration: {exc}")
                 return None
 
-    def process_file(self, file: str):
-        loader = PyPDFLoader(file.name)
-        documents = loader.load()
-        pattern = r"/([^/]+)$"
-        match = re.search(pattern, file.name)
-        file_name = match.group(1)
-        return documents, file_name
-
     def build_chain(self, file: str):
         print(f"DEBUG: Starting build_chain for file: {file.name}")
-        documents, file_name = self.process_file(file)
+        documents, file_name = process_file(file)
         index_name = "".join(
             c if c.isalnum() else "_" for c in file_name.replace(" ", "_")
         ).rstrip("_")
@@ -385,25 +369,8 @@ def generate_feedback(evaluation_scores):
     return "\n".join(feedback)
 
 
-def render_file(file):
-    doc = fitz.open(file.name)
-    try:
-        page = doc[app.N]
-    except IndexError:
-        print(f"Invalid page number: {app.N}, defaulting to page 0")
-        page = doc[0]
-    # Render the page as a PNG image with a resolution of 300 DPI
-    pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
-    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    return image
-
-
 def render_first(file):
-    doc = fitz.open(file.name)
-    page = doc[0]
-    # Render the page as a PNG image with a resolution of 300 DPI
-    pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
-    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    image = render_first_page(file)
 
     # Create the chain when the PDF is uploaded
     app.chain = app(file)
