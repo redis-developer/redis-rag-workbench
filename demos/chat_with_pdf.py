@@ -86,13 +86,18 @@ class my_app:
         self.vector_store = None
         self.document_chain = None
 
+        # Default SemanticCache distance threshold
+        self.distance_threshold = 0.20
+
         # Initialize RAGAS evaluator chains
         self.faithfulness_chain = EvaluatorChain(metric=faithfulness)
         self.answer_rel_chain = EvaluatorChain(metric=answer_relevancy)
 
         # Initialize SemanticCache
         self.llmcache = SemanticCache(
-            index_name="llmcache", redis_url=self.redis_url, distance_threshold=0.1
+            index_name="llmcache",
+            redis_url=self.redis_url,
+            distance_threshold=self.distance_threshold,
         )
         self.ensure_index_created()
 
@@ -174,6 +179,16 @@ class my_app:
                 f"DEBUG: Updated LLM in chain, use_semantic_cache: {use_semantic_cache}"
             )
 
+    def update_distance_threshold(self, new_threshold: float):
+        self.distance_threshold = new_threshold
+        self.llmcache = SemanticCache(
+            index_name="llmcache",
+            redis_url=self.redis_url,
+            distance_threshold=self.distance_threshold,
+        )
+        self.ensure_index_created()
+        self.update_llm()
+
     def get_last_cache_status(self) -> bool:
         if isinstance(self.cached_llm, CachedLLM):
             return self.cached_llm.get_last_cache_status()
@@ -247,9 +262,21 @@ class my_app:
             return {}
 
 
-def get_response(history, query, file, use_semantic_cache, use_reranker, reranker_type):
+def get_response(
+    history,
+    query,
+    file,
+    use_semantic_cache,
+    use_reranker,
+    reranker_type,
+    distance_threshold,
+):
     if not file:
         raise gr.Error(message="Upload a PDF")
+
+    # Update distance threshold if changed
+    if app.distance_threshold != distance_threshold:
+        app.update_distance_threshold(distance_threshold)
 
     # Check if the semantic cache setting has changed
     if app.use_semantic_cache != use_semantic_cache:
@@ -361,27 +388,37 @@ app = my_app()
 redis_theme, redis_styles = load_theme("redis")
 
 with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
-
     gr.HTML(
         "<button class='primary' onclick=\"window.location.href='/demos'\">Back to Demos</button>"
     )
+
     with gr.Row():
         with gr.Column(scale=6):
-            with gr.Row():
-                chatbot = gr.Chatbot(value=[], elem_id="chatbot")
+            chatbot = gr.Chatbot(value=[], elem_id="chatbot")
             elapsed_time_markdown = gr.Markdown(
                 value="", label="Elapsed Time", visible=True
             )
-            with gr.Row():
+
+            with gr.Row(elem_id="input-row"):
                 txt = gr.Textbox(
                     show_label=False,
                     placeholder="Enter text and press enter",
                     elem_id="txt",
-                    scale=1,
+                    scale=5,
                 )
-                submit_btn = gr.Button("🔍 Submit", elem_id="submit-btn", scale=0)
+                submit_btn = gr.Button("🔍 Submit", elem_id="submit-btn", scale=1)
+
             with gr.Row():
                 use_semantic_cache = gr.Checkbox(label="Use Semantic Cache", value=True)
+                distance_threshold = gr.Slider(
+                    minimum=0.01,
+                    maximum=1.0,
+                    value=app.distance_threshold,
+                    step=0.01,
+                    label="Semantic Cache Distance Threshold",
+                )
+
+            with gr.Row():
                 use_reranker = gr.Checkbox(label="Use Reranker", value=False)
                 reranker_type = gr.Dropdown(
                     choices=list(app.rerankers().keys()),
@@ -389,6 +426,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                     value="HuggingFace",
                     interactive=True,
                 )
+
         with gr.Column(scale=6):
             show_img = gr.Image(label="Upload PDF")
             with gr.Row():
@@ -406,13 +444,19 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     submit_btn.click(
         fn=add_text,
         inputs=[chatbot, txt],
-        outputs=[
-            chatbot,
-        ],
+        outputs=[chatbot],
         queue=False,
     ).success(
         fn=get_response,
-        inputs=[chatbot, txt, btn, use_semantic_cache, use_reranker, reranker_type],
+        inputs=[
+            chatbot,
+            txt,
+            btn,
+            use_semantic_cache,
+            use_reranker,
+            reranker_type,
+            distance_threshold,
+        ],
         outputs=[chatbot, txt, elapsed_time_markdown],
     ).success(
         fn=render_file, inputs=[btn], outputs=[show_img]
