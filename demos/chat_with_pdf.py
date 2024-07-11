@@ -35,6 +35,7 @@ from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
 
 from shared_components.theme_management import load_theme
+from shared_components.cached_llm import CachedLLM
 
 import os
 
@@ -64,6 +65,7 @@ def path():
 def app_title():
     return "Chat with one PDF"
 
+
 def add_text(history, text: str):
     if not text:
         raise gr.Error("enter text")
@@ -71,60 +73,23 @@ def add_text(history, text: str):
     return history
 
 
-class CachedLLM(Runnable):
-    def __init__(self, llm, llmcache):
-        self.llm = llm
-        self.llmcache = llmcache
-        self.last_is_cache_hit = False
-        print("DEBUG: CachedLLM initialized")
-
-    def invoke(self, input: Any, config: Optional[RunnableConfig] = None, **kwargs) -> str:
-        if isinstance(input, dict):
-            question = input.get("query") or input.get("input")
-        elif isinstance(input, str):
-            question = input
-        elif isinstance(input, StringPromptValue):
-            question = input.text
-        else:
-            raise ValueError(f"Unexpected input type: {type(input)}")
-
-        if not isinstance(question, str):
-            raise TypeError(f"Question must be a string, got {type(question)}")
-
-        print(f"DEBUG: Checking cache for question: {question[:50]}...")
-        cached_responses = self.llmcache.check(prompt=question, return_fields=["prompt", "response", "metadata"])
-        if cached_responses:
-            self.last_is_cache_hit = True
-            print("DEBUG: Cache hit")
-            return cached_responses[0]["response"]
-
-        self.last_is_cache_hit = False
-        print("DEBUG: Cache miss, querying LLM")
-        response = self.llm.invoke(input, **kwargs)
-        text = response.content if hasattr(response, 'content') else str(response)
-        print(f"DEBUG: Storing in cache: {question[:50]}...")
-        self.llmcache.store(prompt=question, response=text, metadata={})
-        return text
-
-    def get_last_cache_status(self) -> bool:
-        return self.last_is_cache_hit
-
 class my_app:
     def __init__(self, config_path="./config.yaml") -> None:
         self.config = self.load_config(config_path)
         self.redis_url = self.config.get("redis_url")
         self.OPENAI_API_KEY: str = self.config.get("openai_api_key")
-        os.environ["OPENAI_API_KEY"] = self.OPENAI_API_KEY # should do this but RAGAS needs it!
+        os.environ["OPENAI_API_KEY"] = (
+            self.OPENAI_API_KEY
+        )  # shouldn't do this but RAGAS needs it!
         self.cohere_api_key: str = self.config.get("cohere_api_key")
 
         # Initialize rerankers
         hf_reranker = HFCrossEncoderReranker("BAAI/bge-reranker-base")
-        cohere_reranker = CohereReranker(limit=3, api_config={"api_key": self.cohere_api_key})
+        cohere_reranker = CohereReranker(
+            limit=3, api_config={"api_key": self.cohere_api_key}
+        )
 
-        self.RERANKERS = {
-            "HuggingFace": hf_reranker,
-            "Cohere": cohere_reranker
-        }
+        self.RERANKERS = {"HuggingFace": hf_reranker, "Cohere": cohere_reranker}
 
         self.chain = None
         self.chat_history: list = []
@@ -227,7 +192,7 @@ class my_app:
         self.qa_chain = RetrievalQA.from_chain_type(
             self.cached_llm,  # Use cached_llm instead of llm
             retriever=self.vector_store.as_retriever(search_kwargs={"k": 1}),
-            return_source_documents=True
+            return_source_documents=True,
         )
 
         return self.qa_chain
@@ -245,19 +210,23 @@ class my_app:
             # Update the LLM in the chain
             if isinstance(self.chain, RunnableSequence):
                 for step in self.chain.steps:
-                    if hasattr(step, 'llm_chain'):
+                    if hasattr(step, "llm_chain"):
                         step.llm_chain.llm = self.cached_llm
-                    elif hasattr(step, 'llm'):
+                    elif hasattr(step, "llm"):
                         step.llm = self.cached_llm
-            print(f"DEBUG: Updated LLM in chain, use_semantic_cache: {use_semantic_cache}")
+            print(
+                f"DEBUG: Updated LLM in chain, use_semantic_cache: {use_semantic_cache}"
+            )
 
     def get_last_cache_status(self) -> bool:
-            if isinstance(self.cached_llm, CachedLLM):
-                return self.cached_llm.get_last_cache_status()
-            return False
+        if isinstance(self.cached_llm, CachedLLM):
+            return self.cached_llm.get_last_cache_status()
+        return False
 
     def rerank_results(self, query, results):
-        print(f"DEBUG: Re-ranking step - Active: {self.use_reranker}, Reranker: {self.reranker_type}")
+        print(
+            f"DEBUG: Re-ranking step - Active: {self.use_reranker}, Reranker: {self.reranker_type}"
+        )
 
         if not self.use_reranker:
             print("DEBUG: Re-ranking skipped (not active)")
@@ -271,14 +240,21 @@ class my_app:
         # Reconstruct the results with reranked order, using fuzzy matching
         reranked_docs = []
         for reranked in reranked_results:
-            reranked_content = reranked['content'] if isinstance(reranked, dict) else reranked
-            best_match = max(results, key=lambda r: self.similarity(r.page_content, reranked_content))
+            reranked_content = (
+                reranked["content"] if isinstance(reranked, dict) else reranked
+            )
+            best_match = max(
+                results, key=lambda r: self.similarity(r.page_content, reranked_content)
+            )
             reranked_docs.append(best_match)
 
         rerank_info = {
             "original_order": original_results,
-            "reranked_order": [r['content'] if isinstance(r, dict) else r for r in reranked_results],
-            "original_scores": [1.0] * len(results),  # Assuming original scores are not available
+            "reranked_order": [
+                r["content"] if isinstance(r, dict) else r for r in reranked_results
+            ],
+            "original_scores": [1.0]
+            * len(results),  # Assuming original scores are not available
             "reranked_scores": scores,
         }
 
@@ -297,20 +273,23 @@ class my_app:
         eval_input = {
             "question": query,
             "answer": result["result"],
-            "contexts": [doc.page_content for doc in result["source_documents"]]
+            "contexts": [doc.page_content for doc in result["source_documents"]],
         }
 
         try:
             faithfulness_score = self.faithfulness_chain(eval_input)["faithfulness"]
-            answer_relevancy_score = self.answer_rel_chain(eval_input)["answer_relevancy"]
+            answer_relevancy_score = self.answer_rel_chain(eval_input)[
+                "answer_relevancy"
+            ]
 
             return {
                 "faithfulness": faithfulness_score,
-                "answer_relevancy": answer_relevancy_score
+                "answer_relevancy": answer_relevancy_score,
             }
         except Exception as e:
             print(f"Error during RAGAS evaluation: {e}")
             return {}
+
 
 def get_response(history, query, file, use_semantic_cache, use_reranker, reranker_type):
     if not file:
@@ -336,7 +315,9 @@ def get_response(history, query, file, use_semantic_cache, use_reranker, reranke
         rerank_info = None
         if app.use_reranker:
             print(f"DEBUG: Reranking with {reranker_type}")
-            reranked_docs, rerank_info, original_results = app.rerank_results(query, result["source_documents"])
+            reranked_docs, rerank_info, original_results = app.rerank_results(
+                query, result["source_documents"]
+            )
             if reranked_docs:
                 result["source_documents"] = reranked_docs
             else:
@@ -379,7 +360,9 @@ def get_response(history, query, file, use_semantic_cache, use_reranker, reranke
         order_changed = original_order != reranked_order
 
         if order_changed:
-            rerank_feedback = f"ReRanking changed document order. Top score: {reranked_scores[0]:.4f}"
+            rerank_feedback = (
+                f"ReRanking changed document order. Top score: {reranked_scores[0]:.4f}"
+            )
         else:
             rerank_feedback = "ReRanking did not change document order."
 
@@ -391,6 +374,7 @@ def get_response(history, query, file, use_semantic_cache, use_reranker, reranke
             tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
             yield history, "", f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\n{feedback}"
 
+
 def generate_feedback(evaluation_scores):
     if not evaluation_scores:
         return "RAGAS evaluation failed."
@@ -399,6 +383,7 @@ def generate_feedback(evaluation_scores):
     for metric, score in evaluation_scores.items():
         feedback.append(f"  - {metric}: {score:.4f}")
     return "\n".join(feedback)
+
 
 def render_file(file):
     doc = fitz.open(file.name)
@@ -459,7 +444,12 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
             with gr.Row():
                 use_semantic_cache = gr.Checkbox(label="Use Semantic Cache", value=True)
                 use_reranker = gr.Checkbox(label="Use Reranker", value=False)
-                reranker_type = gr.Dropdown(choices=list(app.rerankers().keys()), label="Reranker Type", value="HuggingFace", interactive=True)
+                reranker_type = gr.Dropdown(
+                    choices=list(app.rerankers().keys()),
+                    label="Reranker Type",
+                    value="HuggingFace",
+                    interactive=True,
+                )
         with gr.Column(scale=6):
             show_img = gr.Image(label="Upload PDF")
             with gr.Row():
