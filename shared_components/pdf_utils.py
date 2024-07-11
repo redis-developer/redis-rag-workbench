@@ -1,18 +1,37 @@
-import re
+import os
+
 import fitz
-from PIL import Image
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_experimental.text_splitter import SemanticChunker
 from langchain_community.document_loaders import PyPDFLoader
-from typing import Tuple, List
-from langchain.schema import Document
+from langchain_openai import OpenAIEmbeddings
+from PIL import Image
 
 
-def process_file(file: str) -> Tuple[List[Document], str]:
+def process_file(file, chunk_size: int, chunking_technique: str):
+    # Load the PDF
     loader = PyPDFLoader(file.name)
     documents = loader.load()
-    pattern = r"/([^/]+)$"
-    match = re.search(pattern, file.name)
-    file_name = match.group(1)
-    return documents, file_name
+
+    # Choose the appropriate text splitter based on the chunking technique
+    if chunking_technique == "Semantic":
+        text_splitter = SemanticChunker(
+            OpenAIEmbeddings(), chunk_size=chunk_size, chunk_overlap=20
+        )
+    else:  # Recursive Character Chunking
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=20,
+            length_function=len,
+        )
+
+    # Split the documents
+    split_docs = text_splitter.split_documents(documents)
+
+    # Extract the file name
+    file_name = os.path.basename(file.name)
+
+    return split_docs, file_name
 
 
 def render_file(file: str, page_num: int = 0) -> Image.Image:
