@@ -23,9 +23,10 @@ redis = "^5.0.6"
 langchain-community = "^0.2.5"
 langchain-huggingface = "^0.0.3"
 langchain-openai = "^0.1.8"
-redisvl = "^0.2.1"
+redisvl = "^0.2.3"
 cohere = "^5.5.8"
 ragas = "^0.1.9"
+langchain-redis = "^0.0.1rc1"
 
 
 [build-system]
