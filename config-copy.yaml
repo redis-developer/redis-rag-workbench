@@ -1,4 +1,0 @@
-hf_token: "hf_xxxxxxxxxxxx"
-redis_url: "redis://localhost:6379"
-openai_api_key: "sk-xxxxxxxxxxxx"
-cohere_api_key: "xxxxxxxxxxxx"

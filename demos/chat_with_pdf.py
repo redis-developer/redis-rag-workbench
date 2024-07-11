@@ -1,35 +1,29 @@
-from typing import Any
+import os
+import os.path
 import time
-import yaml
+from typing import Any
+
 import gradio as gr
-from langchain_openai import OpenAIEmbeddings
-from langchain_redis import RedisVectorStore
-
-from langchain_openai import ChatOpenAI
-from langchain_community.callbacks import get_openai_callback
-
-from langchain.chains import create_retrieval_chain
+import yaml
+from dotenv import load_dotenv
+from langchain.chains import RetrievalQA, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_community.callbacks import get_openai_callback
 from langchain_core.runnables import RunnableSequence
-
-
-import os.path
-
-from redisvl.extensions.llmcache import SemanticCache
-from redisvl.utils.rerank import HFCrossEncoderReranker, CohereReranker
-
-from ragas.metrics import faithfulness, answer_relevancy
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_redis import RedisVectorStore
 from ragas.integrations.langchain import EvaluatorChain
-from langchain.chains import RetrievalQA
-from langchain_openai import ChatOpenAI
+from ragas.metrics import answer_relevancy, faithfulness
+from redisvl.extensions.llmcache import SemanticCache
+from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 
-from shared_components.theme_management import load_theme
 from shared_components.cached_llm import CachedLLM
-from shared_components.pdf_utils import process_file, render_file, render_first_page
+from shared_components.pdf_utils import (process_file, render_file,
+                                         render_first_page)
+from shared_components.theme_management import load_theme
 
-import os
+load_dotenv()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -66,14 +60,10 @@ def add_text(history, text: str):
 
 
 class my_app:
-    def __init__(self, config_path="./config.yaml") -> None:
-        self.config = self.load_config(config_path)
-        self.redis_url = self.config.get("redis_url")
-        self.OPENAI_API_KEY: str = self.config.get("openai_api_key")
-        os.environ["OPENAI_API_KEY"] = (
-            self.OPENAI_API_KEY
-        )  # shouldn't do this but RAGAS needs it!
-        self.cohere_api_key: str = self.config.get("cohere_api_key")
+    def __init__(self) -> None:
+        self.redis_url = os.environ.get("REDIS_URL")
+        self.openai_api_key: str = os.environ.get("OPENAI_API_KEY")
+        self.cohere_api_key: str = os.environ.get("COHERE_API_KEY")
 
         # Initialize rerankers
         hf_reranker = HFCrossEncoderReranker("BAAI/bge-reranker-base")
@@ -116,24 +106,6 @@ class my_app:
         self.chain = self.build_chain(file)
         return self.chain
 
-    def load_config(self, file_path):
-        """
-        Load configuration from a YAML file.
-
-        Parameters:
-            file_path (str): Path to the YAML configuration file.
-
-        Returns:
-            dict: Configuration as a dictionary.
-        """
-        with open(file_path, "r") as stream:
-            try:
-                config = yaml.safe_load(stream)
-                return config
-            except yaml.YAMLError as exc:
-                print(f"Error loading configuration: {exc}")
-                return None
-
     def build_chain(self, file: str):
         print(f"DEBUG: Starting build_chain for file: {file.name}")
         documents, file_name = process_file(file)
@@ -143,7 +115,7 @@ class my_app:
 
         print(f"DEBUG: Creating vector store with index name: {index_name}")
         # Load embeddings model
-        embeddings = OpenAIEmbeddings(api_key=self.OPENAI_API_KEY)
+        embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
         self.vector_store = RedisVectorStore.from_documents(
             documents,
             embeddings,
@@ -152,7 +124,7 @@ class my_app:
         )
 
         # Configure the LLM
-        self.llm = ChatOpenAI(temperature=0.7, api_key=self.OPENAI_API_KEY)
+        self.llm = ChatOpenAI(temperature=0.7, api_key=self.openai_api_key)
         self.update_llm()
 
         # Create a prompt template
