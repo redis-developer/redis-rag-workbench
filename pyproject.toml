@@ -27,6 +27,7 @@ redisvl = "^0.2.3"
 cohere = "^5.5.8"
 ragas = "^0.1.9"
 langchain-redis = "^0.0.1rc1"
+langchain-experimental = "^0.0.62"
 
 
 [build-system]

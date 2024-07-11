@@ -11,7 +11,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.prompts import PromptTemplate
 from langchain_community.callbacks import get_openai_callback
 from langchain_core.runnables import RunnableSequence
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAI, OpenAIEmbeddings
 from langchain_redis import RedisVectorStore
 from ragas.integrations.langchain import EvaluatorChain
 from ragas.metrics import answer_relevancy, faithfulness
@@ -73,6 +73,10 @@ class my_app:
 
         self.RERANKERS = {"HuggingFace": hf_reranker, "Cohere": cohere_reranker}
 
+        # chunking settings
+        self.chunk_size = 500
+        self.chunking_technique = "Recursive Character"
+
         self.chain = None
         self.chat_history: list = []
         self.N: int = 0
@@ -86,8 +90,17 @@ class my_app:
         self.vector_store = None
         self.document_chain = None
 
+        # Default Top K
+        self.top_k = 1
         # Default SemanticCache distance threshold
         self.distance_threshold = 0.20
+
+        self.openai_client = OpenAI(api_key=self.openai_api_key)
+        self.available_models = self.get_available_models()
+        self.selected_model = "gpt-3.5-turbo"  # Default model
+
+        # LLM settings
+        self.llm_temperature = 0.7
 
         # Initialize RAGAS evaluator chains
         self.faithfulness_chain = EvaluatorChain(metric=faithfulness)
@@ -107,13 +120,19 @@ class my_app:
         except:
             self.llmcache._index.create()
 
-    def __call__(self, file: str) -> Any:
+    def __call__(self, file: str, chunk_size: int, chunking_technique: str) -> Any:
+        self.chunk_size = chunk_size
+        self.chunking_technique = chunking_technique
         self.chain = self.build_chain(file)
         return self.chain
 
     def build_chain(self, file: str):
-        print(f"DEBUG: Starting build_chain for file: {file.name}")
-        documents, file_name = process_file(file)
+        print(
+            f"DEBUG: Starting build_chain for file: {file.name} with chunk size: {self.chunk_size} and {self.chunking_technique}"
+        )
+        documents, file_name = process_file(
+            file, self.chunk_size, self.chunking_technique
+        )
         index_name = "".join(
             c if c.isalnum() else "_" for c in file_name.replace(" ", "_")
         ).rstrip("_")
@@ -121,15 +140,22 @@ class my_app:
         print(f"DEBUG: Creating vector store with index name: {index_name}")
         # Load embeddings model
         embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
-        self.vector_store = RedisVectorStore.from_documents(
+        vector_store = RedisVectorStore.from_documents(
             documents,
             embeddings,
             redis_url=self.redis_url,
             index_name=index_name,
         )
 
+        # Create the retriever with the initial top_k value
+        self.vector_store = vector_store.as_retriever(search_kwargs={"k": self.top_k})
+
         # Configure the LLM
-        self.llm = ChatOpenAI(temperature=0.7, api_key=self.openai_api_key)
+        self.llm = ChatOpenAI(
+            model=self.selected_model,
+            temperature=self.llm_temperature,
+            api_key=self.openai_api_key,
+        )
         self.update_llm()
 
         # Create a prompt template
@@ -146,13 +172,12 @@ class my_app:
         self.document_chain = create_stuff_documents_chain(self.cached_llm, prompt)
 
         # Create the retrieval chain
-        retriever = self.vector_store.as_retriever(search_kwargs={"k": 1})
-        chain = create_retrieval_chain(retriever, self.document_chain)
+        chain = create_retrieval_chain(self.vector_store, self.document_chain)
 
         # Create the retrieval chain
         self.qa_chain = RetrievalQA.from_chain_type(
             self.cached_llm,  # Use cached_llm instead of llm
-            retriever=self.vector_store.as_retriever(search_kwargs={"k": 1}),
+            retriever=self.vector_store,
             return_source_documents=True,
         )
 
@@ -163,6 +188,50 @@ class my_app:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
         else:
             self.cached_llm = self.llm
+
+    def get_available_models(self):
+        try:
+            models = self.openai_client.models.list()
+            chat_models = [model.id for model in models if model.id.startswith("gpt")]
+            return sorted(chat_models)
+        except Exception as e:
+            print(f"Error fetching models: {e}")
+            return ["gpt-3.5-turbo", "gpt-4"]  # Fallback to default models
+
+    def update_chain(self):
+        if self.vector_store:
+            self.qa_chain = RetrievalQA.from_chain_type(
+                self.cached_llm,
+                retriever=self.vector_store,
+                return_source_documents=True,
+            )
+
+    def update_model(self, new_model: str):
+        self.selected_model = new_model
+        self.llm = ChatOpenAI(
+            model=self.selected_model,
+            temperature=self.llm_temperature,
+            api_key=self.openai_api_key,
+        )
+        self.update_llm()
+        self.update_chain()
+
+    def update_temperature(self, new_temperature: float):
+        self.llm_temperature = new_temperature
+        self.llm = ChatOpenAI(
+            model=self.selected_model,
+            temperature=self.llm_temperature,
+            api_key=self.openai_api_key,
+        )
+        self.update_llm()
+        self.update_chain()
+
+    def update_top_k(self, new_top_k: int):
+        self.top_k = new_top_k
+        if self.vector_store:
+            # Update the search_kwargs for the existing retriever
+            self.vector_store.search_kwargs["k"] = self.top_k
+        self.update_chain()
 
     def update_semantic_cache(self, use_semantic_cache: bool):
         self.use_semantic_cache = use_semantic_cache
@@ -270,13 +339,29 @@ def get_response(
     use_reranker,
     reranker_type,
     distance_threshold,
+    top_k,
+    llm_model,
+    llm_temperature,
 ):
+
     if not file:
         raise gr.Error(message="Upload a PDF")
+
+    # Update Top K (Num of docs to retrieve) if changed
+    if app.top_k != top_k:
+        app.update_top_k(top_k)
 
     # Update distance threshold if changed
     if app.distance_threshold != distance_threshold:
         app.update_distance_threshold(distance_threshold)
+
+    # Update the LLM model if changed
+    if app.selected_model != llm_model:
+        app.update_model(llm_model)
+
+    # Update the LLM Temperature if changed
+    if app.llm_temperature != llm_temperature:
+        app.update_temperature(llm_temperature)
 
     # Check if the semantic cache setting has changed
     if app.use_semantic_cache != use_semantic_cache:
@@ -368,12 +453,14 @@ def generate_feedback(evaluation_scores):
     return "\n".join(feedback)
 
 
-def render_first(file):
+def render_first(file, chunk_size, chunking_technique):
     image = render_first_page(file)
 
-    # Create the chain when the PDF is uploaded
-    app.chain = app(file)
-    print("DEBUG: Chain created in render_first")
+    # Create the chain when the PDF is uploaded, using the specified chunk size and technique
+    app.chain = app(file, chunk_size, chunking_technique)
+    print(
+        f"DEBUG: Chain created in render_first with chunk size {chunk_size} and {chunking_technique}"
+    )
 
     return image, []
 
@@ -393,6 +480,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     )
 
     with gr.Row():
+        # Left Half
         with gr.Column(scale=6):
             chatbot = gr.Chatbot(value=[], elem_id="chatbot")
             elapsed_time_markdown = gr.Markdown(
@@ -407,6 +495,29 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                     scale=5,
                 )
                 submit_btn = gr.Button("🔍 Submit", elem_id="submit-btn", scale=1)
+
+            with gr.Row():
+                with gr.Row():
+                    llm_model = gr.Dropdown(
+                        choices=app.available_models,
+                        value=app.selected_model,
+                        label="LLM Model",
+                        interactive=True,
+                    )
+                    llm_temperature = gr.Slider(
+                        minimum=0,
+                        maximum=1,
+                        value=app.llm_temperature,
+                        step=0.1,
+                        label="LLM Temperature",
+                    )
+                    top_k = gr.Slider(
+                        minimum=1,
+                        maximum=10,
+                        value=app.top_k,
+                        step=1,
+                        label="Top K",
+                    )
 
             with gr.Row():
                 use_semantic_cache = gr.Checkbox(label="Use Semantic Cache", value=True)
@@ -427,8 +538,27 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                     interactive=True,
                 )
 
+        # Right Half
         with gr.Column(scale=6):
             show_img = gr.Image(label="Upload PDF")
+
+            with gr.Row():
+                chunking_technique = gr.Radio(
+                    ["Recursive Character", "Semantic"],
+                    label="Chunking Technique",
+                    value=app.chunking_technique,
+                )
+
+            with gr.Row():
+                chunk_size = gr.Slider(
+                    minimum=100,
+                    maximum=1000,
+                    value=app.chunk_size,
+                    step=50,
+                    label="Chunk Size",
+                    info="Size of document chunks for processing",
+                )
+
             with gr.Row():
                 btn = gr.UploadButton(
                     "📁 Upload PDF", file_types=[".pdf"], elem_id="upload-btn"
@@ -437,7 +567,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
 
     btn.upload(
         fn=render_first,
-        inputs=[btn],
+        inputs=[btn, chunk_size, chunking_technique],
         outputs=[show_img, chatbot],
     )
 
@@ -456,6 +586,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
             use_reranker,
             reranker_type,
             distance_threshold,
+            top_k,
+            llm_model,
+            llm_temperature,
         ],
         outputs=[chatbot, txt, elapsed_time_markdown],
     ).success(
