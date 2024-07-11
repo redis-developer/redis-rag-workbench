@@ -4,7 +4,6 @@ import time
 from typing import Any
 
 import gradio as gr
-import yaml
 from dotenv import load_dotenv
 from langchain.chains import RetrievalQA, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -22,6 +21,7 @@ from shared_components.cached_llm import CachedLLM
 from shared_components.pdf_utils import (process_file, render_file,
                                          render_first_page)
 from shared_components.theme_management import load_theme
+from shared_components.llm_utils import openai_models
 
 load_dotenv()
 
@@ -96,7 +96,7 @@ class my_app:
         self.distance_threshold = 0.20
 
         self.openai_client = OpenAI(api_key=self.openai_api_key)
-        self.available_models = self.get_available_models()
+        self.available_models = sorted(openai_models())
         self.selected_model = "gpt-3.5-turbo"  # Default model
 
         # LLM settings
@@ -188,15 +188,6 @@ class my_app:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
         else:
             self.cached_llm = self.llm
-
-    def get_available_models(self):
-        try:
-            models = self.openai_client.models.list()
-            chat_models = [model.id for model in models if model.id.startswith("gpt")]
-            return sorted(chat_models)
-        except Exception as e:
-            print(f"Error fetching models: {e}")
-            return ["gpt-3.5-turbo", "gpt-4"]  # Fallback to default models
 
     def update_chain(self):
         if self.vector_store:
@@ -331,6 +322,12 @@ class my_app:
             return {}
 
 
+def perform_ragas_evaluation(query, result):
+    evaluation_scores = app.evaluate_response(query, result)
+    feedback = generate_feedback(evaluation_scores)
+    return feedback
+
+
 def get_response(
     history,
     query,
@@ -343,23 +340,16 @@ def get_response(
     llm_model,
     llm_temperature,
 ):
-
     if not file:
         raise gr.Error(message="Upload a PDF")
 
-    # Update Top K (Num of docs to retrieve) if changed
+    # Update parameters if changed
     if app.top_k != top_k:
         app.update_top_k(top_k)
-
-    # Update distance threshold if changed
     if app.distance_threshold != distance_threshold:
         app.update_distance_threshold(distance_threshold)
-
-    # Update the LLM model if changed
     if app.selected_model != llm_model:
         app.update_model(llm_model)
-
-    # Update the LLM Temperature if changed
     if app.llm_temperature != llm_temperature:
         app.update_temperature(llm_temperature)
 
@@ -413,10 +403,6 @@ def get_response(
     answer = result["result"]
     app.chat_history += [(query, answer)]
 
-    # Run RAGAS evaluation
-    evaluation_scores = app.evaluate_response(query, result)
-    feedback = generate_feedback(evaluation_scores)
-
     # Prepare reranking feedback
     rerank_feedback = ""
     if rerank_info:
@@ -434,13 +420,24 @@ def get_response(
         else:
             rerank_feedback = "ReRanking did not change document order."
 
+    # Yield the response first
     for char in answer:
         history[-1][-1] += char
         if is_cache_hit:
-            yield history, "", f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\n{feedback}"
+            yield history, "", f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\nEvaluating..."
         else:
             tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
-            yield history, "", f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\n{feedback}"
+            yield history, "", f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\nEvaluating..."
+
+    # Perform RAGAS evaluation after yielding the response
+    feedback = perform_ragas_evaluation(query, result)
+
+    # Yield the final result with RAGAS evaluation
+    if is_cache_hit:
+        yield history, "", f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\n{feedback}"
+    else:
+        tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
+        yield history, "", f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\n{feedback}"
 
 
 def generate_feedback(evaluation_scores):
