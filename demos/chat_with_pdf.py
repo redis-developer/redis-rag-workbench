@@ -420,24 +420,23 @@ def get_response(
         else:
             rerank_feedback = "ReRanking did not change document order."
 
-    # Yield the response first
-    for char in answer:
-        history[-1][-1] += char
-        if is_cache_hit:
-            yield history, "", f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\nEvaluating..."
-        else:
-            tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
-            yield history, "", f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\nEvaluating..."
-
-    # Perform RAGAS evaluation after yielding the response
+    # Perform RAGAS evaluation
     feedback = perform_ragas_evaluation(query, result)
 
-    # Yield the final result with RAGAS evaluation
+    # Prepare the final output
     if is_cache_hit:
-        yield history, "", f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\n{feedback}"
+        final_output = f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\n{feedback}"
     else:
         tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
-        yield history, "", f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\n{feedback}"
+        final_output = f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\n{feedback}"
+
+    # Yield the response and final output
+    for char in answer:
+        history[-1][-1] += char
+        yield history, "", final_output
+
+    # Yield one last time to ensure the final output is displayed
+    yield history, "", final_output
 
 
 def generate_feedback(evaluation_scores):
@@ -480,7 +479,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
         # Left Half
         with gr.Column(scale=6):
             chatbot = gr.Chatbot(value=[], elem_id="chatbot")
-            elapsed_time_markdown = gr.Markdown(
+            feedback_markdown = gr.Markdown(
                 value="", label="Elapsed Time", visible=True
             )
 
@@ -587,7 +586,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
             llm_model,
             llm_temperature,
         ],
-        outputs=[chatbot, txt, elapsed_time_markdown],
+        outputs=[chatbot, txt, feedback_markdown],
     ).success(
         fn=render_file, inputs=[btn], outputs=[show_img]
     )
@@ -595,5 +594,5 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     reset_btn.click(
         fn=reset_app,
         inputs=None,
-        outputs=[chatbot, show_img, txt, elapsed_time_markdown],
+        outputs=[chatbot, show_img, txt, feedback_markdown],
     )
