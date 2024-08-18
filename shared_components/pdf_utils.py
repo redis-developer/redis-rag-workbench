@@ -16,7 +16,7 @@ def process_file(file, chunk_size: int, chunking_technique: str):
     # Choose the appropriate text splitter based on the chunking technique
     if chunking_technique == "Semantic":
         text_splitter = SemanticChunker(
-            OpenAIEmbeddings(), chunk_size=chunk_size, chunk_overlap=20
+            OpenAIEmbeddings(),
         )
     else:  # Recursive Character Chunking
         text_splitter = RecursiveCharacterTextSplitter(
