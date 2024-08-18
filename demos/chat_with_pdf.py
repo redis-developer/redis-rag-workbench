@@ -537,7 +537,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
 
         # Right Half
         with gr.Column(scale=6):
-            show_img = gr.Image(label="Upload PDF")
+            show_img = gr.Image(label="Uploaded PDF")
 
             with gr.Row():
                 chunking_technique = gr.Radio(
