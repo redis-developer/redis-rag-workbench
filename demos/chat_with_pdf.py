@@ -357,7 +357,7 @@ def get_response(
     # Check if the semantic cache setting has changed
     if app.use_semantic_cache != use_semantic_cache:
         app.update_semantic_cache(use_semantic_cache)
-        app.chain = app(file, app.chunk_size, app.chunking_technique )  # Rebuild the chain
+        app.chain = app(file, app.chunk_size, app.chunking_technique)  # Rebuild the chain
         app.use_semantic_cache = use_semantic_cache
 
     app.use_reranker = use_reranker
@@ -422,22 +422,29 @@ def get_response(
         else:
             rerank_feedback = "ReRanking did not change document order."
 
-    # Perform RAGAS evaluation
+    # Prepare the initial output without RAGAS evaluation
+    if is_cache_hit:
+        initial_output = f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\nRAGAS Evaluation: In progress..."
+    else:
+        tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
+        initial_output = f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\nRAGAS Evaluation: In progress..."
+
+    # Yield the response and initial output
+    for char in answer:
+        history[-1][-1] += char
+        yield history, "", initial_output
+
+    # Perform RAGAS evaluation after yielding the response
     feedback = perform_ragas_evaluation(query, result)
 
-    # Prepare the final output
+    # Prepare the final output with RAGAS evaluation
     if is_cache_hit:
         final_output = f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00 \n\n{rerank_feedback}\n\n{feedback}"
     else:
         tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
         final_output = f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}\n\n{rerank_feedback}\n\n{feedback}"
 
-    # Yield the response and final output
-    for char in answer:
-        history[-1][-1] += char
-        yield history, "", final_output
-
-    # Yield one last time to ensure the final output is displayed
+    # Yield one last time to update with RAGAS evaluation results
     yield history, "", final_output
 
 
