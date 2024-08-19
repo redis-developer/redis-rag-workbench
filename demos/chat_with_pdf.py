@@ -85,7 +85,8 @@ class my_app:
         self.cached_llm = None
         self.last_is_cache_hit = False
 
-        self.use_semantic_cache = True
+        self.use_semantic_cache = False
+        self.use_rerankers = False
         self.llm = None
         self.vector_store = None
         self.document_chain = None
@@ -97,7 +98,7 @@ class my_app:
 
         self.openai_client = OpenAI(api_key=self.openai_api_key)
         self.available_models = sorted(openai_models())
-        self.selected_model = "gpt-3.5-turbo"  # Default model
+        self.selected_model = "gpt-4o" # Default model
 
         # LLM settings
         self.llm_temperature = 0.7
@@ -168,11 +169,11 @@ class my_app:
 
     Helpful Answer:"""
         )
-        # Create the document chain
-        self.document_chain = create_stuff_documents_chain(self.cached_llm, prompt)
+        # # Create the document chain
+        # self.document_chain = create_stuff_documents_chain(self.cached_llm, prompt)
 
-        # Create the retrieval chain
-        chain = create_retrieval_chain(self.vector_store, self.document_chain)
+        # # Create the retrieval chain
+        # chain = create_retrieval_chain(self.vector_store, self.document_chain)
 
         # Create the retrieval chain
         self.qa_chain = RetrievalQA.from_chain_type(
@@ -356,7 +357,8 @@ def get_response(
     # Check if the semantic cache setting has changed
     if app.use_semantic_cache != use_semantic_cache:
         app.update_semantic_cache(use_semantic_cache)
-        app.chain = app(file)  # Rebuild the chain
+        app.chain = app(file, app.chunk_size, app.chunking_technique )  # Rebuild the chain
+        app.use_semantic_cache = use_semantic_cache
 
     app.use_reranker = use_reranker
     app.reranker_type = reranker_type
@@ -516,7 +518,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                     )
 
             with gr.Row():
-                use_semantic_cache = gr.Checkbox(label="Use Semantic Cache", value=True)
+                use_semantic_cache = gr.Checkbox(label="Use Semantic Cache", value=app.use_semantic_cache)
                 distance_threshold = gr.Slider(
                     minimum=0.01,
                     maximum=1.0,
@@ -526,7 +528,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                 )
 
             with gr.Row():
-                use_reranker = gr.Checkbox(label="Use Reranker", value=False)
+                use_reranker = gr.Checkbox(label="Use Reranker", value=app.use_rerankers)
                 reranker_type = gr.Dropdown(
                     choices=list(app.rerankers().keys()),
                     label="Reranker Type",
