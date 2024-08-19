@@ -169,11 +169,6 @@ class my_app:
 
     Helpful Answer:"""
         )
-        # # Create the document chain
-        # self.document_chain = create_stuff_documents_chain(self.cached_llm, prompt)
-
-        # # Create the retrieval chain
-        # chain = create_retrieval_chain(self.vector_store, self.document_chain)
 
         # Create the retrieval chain
         self.qa_chain = RetrievalQA.from_chain_type(
