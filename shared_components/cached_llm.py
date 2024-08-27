@@ -26,9 +26,13 @@ class CachedLLM(Runnable):
         if not isinstance(question, str):
             raise TypeError(f"Question must be a string, got {type(question)}")
 
-        print(f"DEBUG: Checking cache for question: {question[:50]}...")
+        # extract only the user input for cache comparison
+        user_query = question[question.find("Question: ") + 10 : question.find("Helpful Answer:")]
+        context = question[question.find("an answer.\n") + 10 : question.find("Question: ")]
+
+        print(f"DEBUG: Checking cache for question: {user_query[:50]}...")
         cached_responses = self.llmcache.check(
-            prompt=question, return_fields=["prompt", "response", "metadata"]
+            prompt=user_query, return_fields=["prompt", "response", "metadata"]
         )
         if cached_responses:
             self.last_is_cache_hit = True
@@ -39,8 +43,8 @@ class CachedLLM(Runnable):
         print("DEBUG: Cache miss, querying LLM")
         response = self.llm.invoke(input, **kwargs)
         text = response.content if hasattr(response, "content") else str(response)
-        print(f"DEBUG: Storing in cache: {question[:50]}...")
-        self.llmcache.store(prompt=question, response=text, metadata={})
+        print(f"DEBUG: Storing in cache: {user_query[:50]}...")
+        self.llmcache.store(prompt=user_query, response=text, metadata={"context":context})
         return text
 
     def get_last_cache_status(self) -> bool:
