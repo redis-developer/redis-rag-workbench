@@ -36,7 +36,7 @@ Redis RAG Workbench is a playground for exploring Retrieval-Augmented Generation
 
 3. Install the required dependencies:
    ```bash
-   poetry install
+   poetry install --no-root
    ```
 
 4. Set up your environment variables by creating a `.env` file in the project root:
