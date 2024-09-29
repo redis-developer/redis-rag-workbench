@@ -449,7 +449,8 @@ def get_response(
         yield history, "", output
 
     # Perform RAGAS evaluation after yielding the response
-    feedback = perform_ragas_evaluation(query, {"result": answer})
+    # feedback = perform_ragas_evaluation(query, {"result": answer})
+    feedback = ""
 
     # Prepare the final output with RAGAS evaluation
     final_output = f"{output}\n\n{feedback}"
