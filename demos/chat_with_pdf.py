@@ -64,49 +64,58 @@ def add_text(history, text: str):
 class my_app:
     def __init__(self) -> None:
         self.redis_url = os.environ.get("REDIS_URL")
-        self.openai_api_key: str = os.environ.get("OPENAI_API_KEY")
-        self.cohere_api_key: str = os.environ.get("COHERE_API_KEY")
+        self.openai_api_key = os.environ.get("OPENAI_API_KEY")
+        self.cohere_api_key = os.environ.get("COHERE_API_KEY")
 
-        # Initialize rerankers
-        hf_reranker = HFCrossEncoderReranker("BAAI/bge-reranker-base")
-        cohere_reranker = CohereReranker(
-            limit=3, api_config={"api_key": self.cohere_api_key}
-        )
+        required_vars = {
+            "REDIS_URL": os.environ.get("REDIS_URL"),
+            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
+            "COHERE_API_KEY": os.environ.get("COHERE_API_KEY")
+        }
 
-        self.RERANKERS = {"HuggingFace": hf_reranker, "Cohere": cohere_reranker}
+        missing_vars = {k: v for k, v in required_vars.items() if not v}
 
-        # chunking settings
+        if missing_vars:
+            self.credentials_set = False
+        else:
+            self.credentials_set = True
+
+        self.initialized = False
+        self.RERANKERS = {}
+
+        # Initialize non-API dependent variables
         self.chunk_size = 500
         self.chunking_technique = "Recursive Character"
-
         self.chain = None
-        self.chat_history: list = []
-        self.N: int = 0
-        self.count: int = 0
-
-        self.cached_llm = None
-        self.last_is_cache_hit = False
-
+        self.chat_history = None
+        self.N = 0
+        self.count = 0
         self.use_semantic_cache = False
         self.use_rerankers = False
-        self.llm = None
-        self.vector_store = None
-        self.document_chain = None
-
-        # Default Top K
         self.top_k = 1
-        # Default SemanticCache distance threshold
         self.distance_threshold = 0.20
+        self.selected_model = "gpt-4o"
+        self.llm_temperature = 0.7
+        self.use_chat_history = False
+
+        self.available_models = sorted(openai_models())
+        self.llm = None  # Initialize llm as None
+        self.cached_llm = None
+
+        if self.credentials_set:
+            self.initialize_components()
+
+    def initialize_components(self):
+        if not self.credentials_set:
+            raise ValueError("Credentials must be set before initializing components")
+
+        # Initialize rerankers
+        self.RERANKERS = {
+            "HuggingFace": HFCrossEncoderReranker("BAAI/bge-reranker-base"),
+            "Cohere": CohereReranker(limit=3, api_config={"api_key": self.cohere_api_key})
+        }
 
         self.openai_client = OpenAI(api_key=self.openai_api_key)
-        self.available_models = sorted(openai_models())
-        self.selected_model = "gpt-4o" # Default model
-
-        # LLM settings
-        self.llm_temperature = 0.7
-
-        # Initialize LLM
-        self.update_llm()
 
         # Initialize RAGAS evaluator chains
         self.faithfulness_chain = EvaluatorChain(metric=faithfulness)
@@ -119,12 +128,57 @@ class my_app:
             distance_threshold=self.distance_threshold,
         )
 
-        # Chat History
-        self.use_chat_history = False
-        self.chat_history = None
-        print(f"DEBUG: Initial chat history state - use_chat_history: {self.use_chat_history}, chat_history: {self.chat_history}")
+        # Initialize chat history if use_chat_history is True
+        if self.use_chat_history:
+            self.chat_history = RedisChatMessageHistory(session_id="chat_with_pdf", redis_url=self.redis_url)
+        else:
+            self.chat_history = None
+
+        self.initialized = True
 
         self.ensure_index_created()
+        self.update_llm()
+
+        self.initialized = True
+
+    def set_credentials(self, redis_url, openai_key, cohere_key):
+        self.redis_url = redis_url or self.redis_url
+        self.openai_api_key = openai_key or self.openai_api_key
+        self.cohere_api_key = cohere_key or self.cohere_api_key
+
+        # Update environment variables
+        os.environ["REDIS_URL"] = self.redis_url
+        os.environ["OPENAI_API_KEY"] = self.openai_api_key
+        os.environ["COHERE_API_KEY"] = self.cohere_api_key
+
+        self.credentials_set = all([self.redis_url, self.openai_api_key, self.cohere_api_key])
+
+        if self.credentials_set:
+            self.initialize_components()
+
+        return "Credentials updated successfully. You can now use the demo."
+
+    def update_llm(self):
+        print("DEBUG: Updating LLM")
+        self.llm = ChatOpenAI(
+            model=self.selected_model,
+            temperature=self.llm_temperature,
+            api_key=self.openai_api_key,
+        )
+
+        if self.use_semantic_cache:
+            print("DEBUG: Using semantic cache")
+            self.cached_llm = CachedLLM(self.llm, self.llmcache)
+        else:
+            print("DEBUG: Not using semantic cache")
+            self.cached_llm = self.llm
+
+        print(f"DEBUG: Updated LLM type: {type(self.cached_llm)}")
+
+    def get_reranker_choices(self):
+        if self.initialized:
+            return list(self.RERANKERS.keys())
+        return ["HuggingFace", "Cohere"]  # Default choices before initialization
 
     def ensure_index_created(self):
         try:
@@ -482,7 +536,7 @@ def render_first(file, chunk_size, chunking_technique):
 
 # Connect the show_history_btn to the display_chat_history function and show the modal
 def show_history():
-    print(f"DEBUG: show_history called. use_chat_history: {app.use_chat_history}, chat_history: {app.chat_history}")
+    print(f"DEBUG: show_history called. use_chat_history: {app.use_chat_history}")
     if app.use_chat_history and app.chat_history is not None:
         messages = app.chat_history.messages
         print(f"DEBUG: Retrieved {len(messages)} messages from chat history")
@@ -512,6 +566,15 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     gr.HTML(
         "<button class='primary' onclick=\"window.location.href='/demos'\">Back to Demos</button>"
     )
+
+    # Add Modal for credentials input
+    with Modal(visible=False) as credentials_modal:
+        gr.Markdown("## Enter Missing Credentials")
+        redis_url_input = gr.Textbox(label="REDIS_URL", type="password", value=app.redis_url or "")
+        openai_key_input = gr.Textbox(label="OPENAI_API_KEY", type="password", value=app.openai_api_key or "")
+        cohere_key_input = gr.Textbox(label="COHERE_API_KEY", type="password", value=app.cohere_api_key or "")
+        credentials_status = gr.Markdown("Please enter the missing credentials.")
+        submit_credentials_btn = gr.Button("Submit Credentials")
 
     with gr.Row():
         # Left Half
@@ -632,6 +695,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
             top_k,
             llm_model,
             llm_temperature,
+            use_chat_history,
         ],
         outputs=[chatbot, txt, feedback_markdown],
     ).success(
@@ -653,4 +717,37 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     show_history_btn.click(
         fn=show_history,
         outputs=[history_display, history_modal]
+    )
+
+    # Event handlers
+    def check_credentials():
+        if not app.credentials_set:
+            return gr.update(visible=True)
+        return gr.update(visible=False)
+
+    demo.load(check_credentials, outputs=credentials_modal)
+
+    def update_components_state():
+        return [gr.update(interactive=app.credentials_set and app.initialized) for _ in range(4)]
+
+    # Use success event to update components state after submitting credentials
+    submit_credentials_btn.click(
+        fn=app.set_credentials,
+        inputs=[redis_url_input, openai_key_input, cohere_key_input],
+        outputs=credentials_status,
+    ).then(
+        fn=check_credentials,
+        outputs=credentials_modal,
+    ).then(
+        fn=lambda: gr.update(choices=app.get_reranker_choices()),
+        outputs=reranker_type,
+    ).then(
+        fn=update_components_state,
+        outputs=[txt, submit_btn, btn, reset_btn],
+    )
+
+    # Use success event to update components state after submitting credentials
+    submit_credentials_btn.click(
+        fn=update_components_state,
+        outputs=[txt, submit_btn, btn, reset_btn],
     )
