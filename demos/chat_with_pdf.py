@@ -93,7 +93,7 @@ class my_app:
         self.use_semantic_cache = False
         self.use_rerankers = False
         self.top_k = 1
-        self.distance_threshold = 0.20
+        self.distance_threshold = 0.30
         self.selected_model = "gpt-4o"
         self.llm_temperature = 0.7
         self.use_chat_history = False
