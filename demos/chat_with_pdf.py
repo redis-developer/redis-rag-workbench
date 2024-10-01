@@ -101,6 +101,7 @@ class my_app:
         self.available_models = sorted(openai_models())
         self.llm = None  # Initialize llm as None
         self.cached_llm = None
+        self.vector_store = None
 
         if self.credentials_set:
             self.initialize_components()
@@ -189,17 +190,8 @@ class my_app:
     def __call__(self, file: str, chunk_size: int, chunking_technique: str) -> Any:
         self.chunk_size = chunk_size
         self.chunking_technique = chunking_technique
-        self.chain = self.build_chain(file)
-        return self.chain
-
-    def build_chain(self, file: str):
-        print(f"DEBUG: Starting build_chain for file: {file.name} with chunk size: {self.chunk_size} and {self.chunking_technique}")
-        documents, file_name = process_file(
-            file, self.chunk_size, self.chunking_technique
-        )
-        index_name = "".join(
-            c if c.isalnum() else "_" for c in file_name.replace(" ", "_")
-        ).rstrip("_")
+        documents, file_name = process_file(file, self.chunk_size, self.chunking_technique)
+        index_name = "".join(c if c.isalnum() else "_" for c in file_name.replace(" ", "_")).rstrip("_")
 
         print(f"DEBUG: Creating vector store with index name: {index_name}")
         embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
@@ -210,20 +202,21 @@ class my_app:
             index_name=index_name,
         )
 
-        retriever = self.vector_store.as_retriever(search_kwargs={"k": self.top_k})
+        self.chain = self.build_chain(self.vector_store)
+        return self.chain
 
-        # Create a formatting function for documents
+    def build_chain(self, vector_store):
+        retriever = vector_store.as_retriever(search_kwargs={"k": self.top_k})
+
         def format_docs(docs):
             return "\n\n".join(doc.page_content for doc in docs)
 
-        # Create a custom prompt template
         prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a helpful AI assistant. Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer."),
             ("human", "Context: {context}\n\nQuestion: {question}"),
             ("human", "Helpful Answer:")
         ])
 
-        # Create the RAG chain
         rag_chain = (
             {
                 "context": retriever | format_docs,
@@ -326,17 +319,9 @@ class my_app:
     def update_semantic_cache(self, use_semantic_cache: bool):
         self.use_semantic_cache = use_semantic_cache
         self.update_llm()
-        if self.chain:
-            # Update the LLM in the chain
-            if isinstance(self.chain, RunnableSequence):
-                for step in self.chain.steps:
-                    if hasattr(step, "llm_chain"):
-                        step.llm_chain.llm = self.cached_llm
-                    elif hasattr(step, "llm"):
-                        step.llm = self.cached_llm
-            print(
-                f"DEBUG: Updated LLM in chain, use_semantic_cache: {use_semantic_cache}"
-            )
+        if self.vector_store:
+            self.chain = self.build_chain(self.vector_store)
+        print(f"DEBUG: Updated semantic cache setting to {use_semantic_cache}")
 
     def update_distance_threshold(self, new_threshold: float):
         self.distance_threshold = new_threshold
@@ -729,6 +714,13 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
 
     def update_components_state():
         return [gr.update(interactive=app.credentials_set and app.initialized) for _ in range(4)]
+
+    # handle toggle of the semantic cache usage
+    use_semantic_cache.change(
+        fn=app.update_semantic_cache,
+        inputs=[use_semantic_cache],
+        outputs=[]
+    )
 
     # Use success event to update components state after submitting credentials
     submit_credentials_btn.click(
