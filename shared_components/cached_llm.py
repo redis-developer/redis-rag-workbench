@@ -14,25 +14,27 @@ class CachedLLM(Runnable):
         self, input: Any, config: Optional[RunnableConfig] = None, **kwargs
     ) -> str:
         if isinstance(input, dict):
+            print(f"DEBUG: CachedLLM input is dict ==> {input}")
             question = input.get("query") or input.get("input")
         elif isinstance(input, str):
+            print(f"DEBUG: CachedLLM input is str ==> {input}")
             question = input
         elif isinstance(input, StringPromptValue):
+            print(f"DEBUG: CachedLLM input is StringPromptValue ==> {input}")
             question = input.text
         elif isinstance(input, ChatPromptValue):
+            print(f"DEBUG: CachedLLM input is ChatPromptValue ==> {input}")
             # Extract the last human message from the chat history
-            human_messages = [m for m in input.messages if m.type == "human"]
-            if human_messages:
-                question = human_messages[-1].content
-            else:
-                raise ValueError("No human message found in ChatPromptValue")
+            print(f"DEBUG: CachedLLM input is ChatPromptValue ==> {input}")
+            human_message = next(m for m in input.messages if m.type == "human")
+            question = human_message.content.strip()
         else:
             raise ValueError(f"Unexpected input type: {type(input)}")
 
         if not isinstance(question, str):
             raise TypeError(f"Question must be a string, got {type(question)}")
 
-        print(f"DEBUG: Checking cache for question: {question[:50]}...")
+        print(f"DEBUG: Checking cache for question: {question}...")
         cached_responses = self.llmcache.check(
             prompt=question, return_fields=["prompt", "response", "metadata"]
         )
