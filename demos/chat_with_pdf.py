@@ -7,17 +7,18 @@ import gradio as gr
 from dotenv import load_dotenv
 from gradio_modal import Modal
 from langchain.chains import RetrievalQA
-from langchain.memory import ConversationBufferMemory
 from langchain_community.callbacks import get_openai_callback
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough, RunnableSequence
+from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAI, OpenAIEmbeddings
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas.integrations.langchain import EvaluatorChain
 from ragas.metrics import answer_relevancy, faithfulness
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
+from ulid import ULID
+from redis.exceptions import ResponseError
 
 from shared_components.cached_llm import CachedLLM
 from shared_components.llm_utils import openai_models
@@ -63,6 +64,7 @@ def add_text(history, text: str):
 
 class my_app:
     def __init__(self) -> None:
+        self.session_id = None
         self.redis_url = os.environ.get("REDIS_URL")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.cohere_api_key = os.environ.get("COHERE_API_KEY")
@@ -99,9 +101,11 @@ class my_app:
         self.use_chat_history = False
 
         self.available_models = sorted(openai_models())
-        self.llm = None  # Initialize llm as None
+        self.llm = None
         self.cached_llm = None
         self.vector_store = None
+        self.llmcache = None
+        self.index_name = None
 
         if self.credentials_set:
             self.initialize_components()
@@ -122,25 +126,38 @@ class my_app:
         self.faithfulness_chain = EvaluatorChain(metric=faithfulness)
         self.answer_rel_chain = EvaluatorChain(metric=answer_relevancy)
 
-        # Initialize SemanticCache
-        self.llmcache = SemanticCache(
-            index_name="llmcache",
-            redis_url=self.redis_url,
-            distance_threshold=self.distance_threshold,
-        )
+        # # Initialize SemanticCache
+        # self.llmcache = SemanticCache(
+        #     name=f"llmcache:{self.session_id}",
+        #     redis_url=self.redis_url,
+        #     distance_threshold=self.distance_threshold,
+        # )
 
         # Initialize chat history if use_chat_history is True
         if self.use_chat_history:
-            self.chat_history = RedisChatMessageHistory(session_id="chat_with_pdf", redis_url=self.redis_url)
+            self.chat_history = RedisChatMessageHistory(session_id=self.session_id, redis_url=self.redis_url)
         else:
             self.chat_history = None
 
         self.initialized = True
 
-        self.ensure_index_created()
+        # self.ensure_index_created()
         self.update_llm()
 
         self.initialized = True
+
+    def initialize_session(self):
+        self.session_id = str(ULID())
+        if self.use_chat_history:
+            self.chat_history = RedisChatMessageHistory(
+                session_id=self.session_id,
+                redis_url=self.redis_url,
+                index_name="idx:chat_history"  # Use a common index for all chat histories
+            )
+        else:
+            self.chat_history = None
+
+        return {"session_id": self.session_id, "chat_history": self.chat_history}
 
     def set_credentials(self, redis_url, openai_key, cohere_key):
         self.redis_url = redis_url or self.redis_url
@@ -167,7 +184,7 @@ class my_app:
             api_key=self.openai_api_key,
         )
 
-        if self.use_semantic_cache:
+        if self.use_semantic_cache and self.llmcache:
             print("DEBUG: Using semantic cache")
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
         else:
@@ -191,16 +208,18 @@ class my_app:
         self.chunk_size = chunk_size
         self.chunking_technique = chunking_technique
         documents, file_name = process_file(file, self.chunk_size, self.chunking_technique)
-        index_name = "".join(c if c.isalnum() else "_" for c in file_name.replace(" ", "_")).rstrip("_")
+        self.index_name = "".join(c if c.isalnum() else "_" for c in file_name.replace(" ", "_")).rstrip("_")
 
-        print(f"DEBUG: Creating vector store with index name: {index_name}")
+        print(f"DEBUG: Creating vector store with index name: {self.index_name}")
         embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
         self.vector_store = RedisVectorStore.from_documents(
             documents,
             embeddings,
             redis_url=self.redis_url,
-            index_name=index_name,
+            index_name=self.index_name,
         )
+
+        self.update_semantic_cache(self.use_semantic_cache)
 
         self.chain = self.build_chain(self.vector_store)
         return self.chain
@@ -212,9 +231,10 @@ class my_app:
             return "\n\n".join(doc.page_content for doc in docs)
 
         prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful AI assistant. Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer."),
-            ("human", "Context: {context}\n\nQuestion: {question}"),
-            ("human", "Helpful Answer:")
+            ("system", "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer."),
+            ("system", "Context: {context}"),
+            ("human", "{question}"),
+            ("system", "Provide a helpful and accurate answer based on the given context and question:")
         ])
 
         rag_chain = (
@@ -230,24 +250,41 @@ class my_app:
         print("DEBUG: RAG chain created successfully")
         return rag_chain
 
-    def update_chat_history(self, use_chat_history: bool):
+    def update_chat_history(self, use_chat_history: bool, session_state):
         print(f"DEBUG: Updating chat history. use_chat_history: {use_chat_history}")
         self.use_chat_history = use_chat_history
+
+        if session_state is None:
+            session_state = self.initialize_session()
+
         if self.use_chat_history:
-            if self.chat_history is None:
-                self.chat_history = RedisChatMessageHistory(session_id="chat_with_pdf", redis_url=self.redis_url)
-                print("DEBUG: Created new RedisChatMessageHistory")
-            else:
-                print("DEBUG: Using existing RedisChatMessageHistory")
-            print(f"DEBUG: Current chat history length: {len(self.chat_history.messages)}")
+            if 'chat_history' not in session_state or session_state['chat_history'] is None:
+                session_state['chat_history'] = RedisChatMessageHistory(
+                    session_id=session_state.get('session_id', str(ULID())),
+                    redis_url=self.redis_url,
+                    index_name="idx:chat_history"
+                )
+                print(f"DEBUG: Created new RedisChatMessageHistory with session_id: {session_state['session_id']}")
+
+            print("DEBUG: Using existing RedisChatMessageHistory")
+            try:
+                messages_count = len(session_state['chat_history'].messages)
+                print(f"DEBUG: Current chat history length: {messages_count}")
+            except Exception as e:
+                print(f"DEBUG: Error getting chat history length: {str(e)}")
         else:
-            if self.chat_history:
-                print(f"DEBUG: Clearing chat history. Current length: {len(self.chat_history.messages)}")
-                self.chat_history.clear()
-                print("DEBUG: Cleared existing chat history")
-            self.chat_history = None
+            if 'chat_history' in session_state and session_state['chat_history']:
+                try:
+                    messages_count = len(session_state['chat_history'].messages)
+                    print(f"DEBUG: Clearing chat history. Current length: {messages_count}")
+                    session_state['chat_history'].clear()
+                    print("DEBUG: Cleared existing chat history")
+                except Exception as e:
+                    print(f"DEBUG: Error clearing chat history: {str(e)}")
+            session_state['chat_history'] = None
+
         print(f"DEBUG: Chat history setting updated to {self.use_chat_history}")
-        return self.use_chat_history
+        return session_state
 
     def get_chat_history(self):
         if self.chat_history and self.use_chat_history:
@@ -317,21 +354,43 @@ class my_app:
         self.update_chain()
 
     def update_semantic_cache(self, use_semantic_cache: bool):
+        print(f"DEBUG: Updating semantic cache. use_semantic_cache: {use_semantic_cache}")
         self.use_semantic_cache = use_semantic_cache
-        self.update_llm()
-        if self.vector_store:
-            self.chain = self.build_chain(self.vector_store)
+        if self.use_semantic_cache and self.index_name:
+            semantic_cache_index_name = f"llmcache:{self.index_name}"
+            self.llmcache = SemanticCache(
+                name=semantic_cache_index_name,
+                redis_url=self.redis_url,
+                distance_threshold=self.distance_threshold,
+            )
+            print(f"DEBUG: Created SemanticCache with index: {semantic_cache_index_name}")
+
+            # Ensure the index is created
+            try:
+                self.llmcache._index.info()
+            except ResponseError:
+                print(f"DEBUG: Creating new index for SemanticCache: {semantic_cache_index_name}")
+                self.llmcache._index.create()
+
+            self.update_llm()
+            if self.vector_store:
+                self.chain = self.build_chain(self.vector_store)
+        else:
+            self.llmcache = None
+            print("DEBUG: SemanticCache disabled")
+
         print(f"DEBUG: Updated semantic cache setting to {use_semantic_cache}")
 
     def update_distance_threshold(self, new_threshold: float):
         self.distance_threshold = new_threshold
-        self.llmcache = SemanticCache(
-            index_name="llmcache",
-            redis_url=self.redis_url,
-            distance_threshold=self.distance_threshold,
-        )
-        self.ensure_index_created()
-        self.update_llm()
+        if self.index_name:
+            self.llmcache = SemanticCache(
+                name=f"llmcache:{self.index_name}",
+                redis_url=self.redis_url,
+                distance_threshold=self.distance_threshold,
+            )
+            self.ensure_index_created()
+            self.update_llm()
 
     def get_last_cache_status(self) -> bool:
         if isinstance(self.cached_llm, CachedLLM):
@@ -424,7 +483,10 @@ def get_response(
     llm_model,
     llm_temperature,
     use_chat_history,
+    session_state,
 ):
+    if not session_state:
+        app.session_state = app.initialize_session()
     if not file:
         raise gr.Error(message="Upload a PDF")
 
@@ -465,13 +527,16 @@ def get_response(
 
     elapsed_time = end_time - start_time
 
-    answer = result  # The result is now directly the answer string
+    answer = result
 
-    if app.use_chat_history and app.chat_history is not None:
-        app.chat_history.add_user_message(query)
-        app.chat_history.add_ai_message(answer)
-        print(f"DEBUG: Added to chat history. Current length: {len(app.chat_history.messages)}")
-        print(f"DEBUG: Last message in history: {app.chat_history.messages[-1].content[:50]}...")
+    if app.use_chat_history and session_state['chat_history'] is not None:
+        session_state['chat_history'].add_user_message(query)
+        session_state['chat_history'].add_ai_message(answer)
+        try:
+            print(f"DEBUG: Added to chat history. Current length: {len(session_state['chat_history'].messages)}")
+            print(f"DEBUG: Last message in history: {session_state['chat_history'].messages[-1].content[:50]}...")
+        except Exception as e:
+            print(f"DEBUG: Error accessing chat history: {str(e)}")
     else:
         print("DEBUG: Chat history not updated (disabled or None)")
 
@@ -485,17 +550,18 @@ def get_response(
     # Yield the response and output
     for char in answer:
         history[-1][-1] += char
-        yield history, "", output
+        yield history, "", output, session_state
 
     # Perform RAGAS evaluation after yielding the response
     # feedback = perform_ragas_evaluation(query, {"result": answer})
+    # TODO: temporarily disabled due to bug in RAGAS
     feedback = ""
 
     # Prepare the final output with RAGAS evaluation
     final_output = f"{output}\n\n{feedback}"
 
     # Yield one last time to update with RAGAS evaluation results
-    yield history, "", final_output
+    yield history, "", final_output, session_state
 
 
 def generate_feedback(evaluation_scores):
@@ -508,30 +574,32 @@ def generate_feedback(evaluation_scores):
     return "\n".join(feedback)
 
 
-def render_first(file, chunk_size, chunking_technique):
+def render_first(file, chunk_size, chunking_technique, session_state):
+    if not session_state:
+        session_state = app.initialize_session()
     image = render_first_page(file)
-
     # Create the chain when the PDF is uploaded, using the specified chunk size and technique
     app.chain = app(file, chunk_size, chunking_technique)
-    print(
-        f"DEBUG: Chain created in render_first with chunk size {chunk_size} and {chunking_technique}"
-    )
-
-    return image, []
+    print(f"DEBUG: Chain created in render_first with chunk size {chunk_size} and {chunking_technique}")
+    return image, [], session_state
 
 # Connect the show_history_btn to the display_chat_history function and show the modal
-def show_history():
+def show_history(session_state):
     print(f"DEBUG: show_history called. use_chat_history: {app.use_chat_history}")
-    if app.use_chat_history and app.chat_history is not None:
-        messages = app.chat_history.messages
-        print(f"DEBUG: Retrieved {len(messages)} messages from chat history")
-        formatted_history = []
-        for msg in messages:
-            if msg.type == 'human':
-                formatted_history.append(f"👤 **Human**: {msg.content}\n")
-            elif msg.type == 'ai':
-                formatted_history.append(f"🤖 **AI**: {msg.content}\n")
-        history = "\n".join(formatted_history)
+    if app.use_chat_history and session_state['chat_history'] is not None:
+        try:
+            messages = session_state['chat_history'].messages
+            print(f"DEBUG: Retrieved {len(messages)} messages from chat history")
+            formatted_history = []
+            for msg in messages:
+                if msg.type == 'human':
+                    formatted_history.append(f"👤 **Human**: {msg.content}\n")
+                elif msg.type == 'ai':
+                    formatted_history.append(f"🤖 **AI**: {msg.content}\n")
+            history = "\n".join(formatted_history)
+        except Exception as e:
+            print(f"DEBUG: Error retrieving chat history: {str(e)}")
+            history = "Error retrieving chat history."
     else:
         history = "No chat history available."
 
@@ -548,6 +616,8 @@ app = my_app()
 redis_theme, redis_styles = load_theme("redis")
 
 with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
+    session_state = gr.State()
+
     gr.HTML(
         "<button class='primary' onclick=\"window.location.href='/demos'\">Back to Demos</button>"
     )
@@ -658,8 +728,8 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
 
     btn.upload(
         fn=render_first,
-        inputs=[btn, chunk_size, chunking_technique],
-        outputs=[show_img, chatbot],
+        inputs=[btn, chunk_size, chunking_technique, session_state],
+        outputs=[show_img, chatbot, session_state],
     )
 
     submit_btn.click(
@@ -681,8 +751,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
             llm_model,
             llm_temperature,
             use_chat_history,
+            session_state,
         ],
-        outputs=[chatbot, txt, feedback_markdown],
+        outputs=[chatbot, txt, feedback_markdown, session_state],
     ).success(
         fn=render_file, inputs=[btn], outputs=[show_img]
     )
@@ -695,12 +766,13 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
 
     use_chat_history.change(
         fn=app.update_chat_history,
-        inputs=[use_chat_history],
-        outputs=[]
+        inputs=[use_chat_history, session_state],
+        outputs=[session_state]
     )
 
     show_history_btn.click(
         fn=show_history,
+        inputs=[session_state],
         outputs=[history_display, history_modal]
     )
 

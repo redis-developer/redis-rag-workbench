@@ -28,6 +28,7 @@ ragas = "^0.1.20"
 langchain-redis = "^0.0.4"
 langchain-experimental = "^0.0.62"
 gradio-modal = "^0.0.3"
+python-ulid = "^2.7.0"
 
 
 [build-system]
