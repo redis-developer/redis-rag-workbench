@@ -8,12 +8,11 @@ from dotenv import load_dotenv
 from gradio_modal import Modal
 from langchain.chains import RetrievalQA
 from langchain_community.callbacks import get_openai_callback
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAI, OpenAIEmbeddings
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
-from ragas.integrations.langchain import EvaluatorChain
+
+# from ragas.integrations.langchain import EvaluatorChain TODO: decide if we can delete the other code
 from ragas.metrics import answer_relevancy, faithfulness
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
@@ -138,10 +137,6 @@ class MyApp:
 
         self.openai_client = OpenAI(api_key=self.openai_api_key)
 
-        # Initialize RAGAS evaluator chains
-        # self.faithfulness_chain = RagasEvaluatorChain(metric=faithfulness)
-        # self.answer_rel_chain = RagasEvaluatorChain(metric=answer_relevancy)
-
         # # Initialize SemanticCache
         # self.llmcache = SemanticCache(
         #     name=f"llmcache:{self.session_id}",
@@ -251,9 +246,6 @@ class MyApp:
     def build_chain(self, vector_store):
         retriever = vector_store.as_retriever(search_kwargs={"k": self.top_k})
 
-        # def format_docs(docs):
-        #     return "\n\n".join(doc.page_content for doc in docs)
-
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -268,13 +260,6 @@ class MyApp:
                 ),
             ]
         )
-
-        # rag_chain = (
-        #     {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        #     | prompt
-        #     | self.cached_llm
-        #     | StrOutputParser()
-        # )
 
         combine_docs_chain = create_stuff_documents_chain(self.cached_llm, prompt)
         rag_chain = create_retrieval_chain(retriever, combine_docs_chain)
@@ -357,14 +342,6 @@ class MyApp:
 
         print(f"DEBUG: Updated LLM type: {type(self.cached_llm)}")
 
-    def update_chain(self):
-        if self.vector_store:
-            self.qa_chain = RetrievalQA.from_chain_type(
-                self.cached_llm,
-                retriever=self.vector_store.as_retriever(),
-                return_source_documents=True,
-            )
-
     def update_model(self, new_model: str):
         self.selected_model = new_model
         self.llm = ChatOpenAI(
@@ -373,7 +350,6 @@ class MyApp:
             api_key=self.openai_api_key,
         )
         self.update_llm()
-        self.update_chain()
 
     def update_temperature(self, new_temperature: float):
         self.llm_temperature = new_temperature
@@ -383,14 +359,12 @@ class MyApp:
             api_key=self.openai_api_key,
         )
         self.update_llm()
-        self.update_chain()
 
     def update_top_k(self, new_top_k: int):
         self.top_k = new_top_k
         if self.vector_store:
             # Update the search_kwargs for the existing retriever
             self.vector_store.search_kwargs["k"] = self.top_k
-        self.update_chain()
 
     def update_semantic_cache(self, use_semantic_cache: bool):
         print(
@@ -499,12 +473,6 @@ class MyApp:
 
         try:
             eval_results = evaluate(ds, [faithfulness, answer_relevancy])
-            # faithfulness_score = self.faithfulness_chain.invoke(eval_input)[
-            #     "faithfulness"
-            # ]
-            # answer_relevancy_score = self.answer_rel_chain(eval_input)[
-            #     "answer_relevancy"
-            # ]
 
             return eval_results
         except Exception as e:
@@ -603,8 +571,6 @@ def get_response(
 
     # Perform RAGAS evaluation after yielding the response
     feedback = perform_ragas_evaluation(query, result)
-    # TODO: temporarily disabled due to bug in RAGAS
-    # feedback = ""
 
     # Prepare the final output with RAGAS evaluation
     final_output = f"{output}\n\n{feedback}"
