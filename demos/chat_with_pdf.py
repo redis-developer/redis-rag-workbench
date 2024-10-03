@@ -12,7 +12,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI, OpenAI, OpenAIEmbeddings
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 
-# from ragas.integrations.langchain import EvaluatorChain
+# from ragas.integrations.langchain import EvaluatorChain TODO: decide if we can delete the other code
 from ragas.metrics import answer_relevancy, faithfulness
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
@@ -136,10 +136,6 @@ class MyApp:
         }
 
         self.openai_client = OpenAI(api_key=self.openai_api_key)
-
-        # Initialize RAGAS evaluator chains
-        # self.faithfulness_chain = RagasEvaluatorChain(metric=faithfulness)
-        # self.answer_rel_chain = RagasEvaluatorChain(metric=answer_relevancy)
 
         # # Initialize SemanticCache
         # self.llmcache = SemanticCache(
