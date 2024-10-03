@@ -22,9 +22,23 @@ from redis.exceptions import ResponseError
 
 from shared_components.cached_llm import CachedLLM
 from shared_components.llm_utils import openai_models
-from shared_components.pdf_utils import (process_file, render_file,
-                                         render_first_page)
+from shared_components.pdf_utils import process_file, render_file, render_first_page
 from shared_components.theme_management import load_theme
+
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+
+from datasets import Dataset
+
+from ragas.metrics import (
+    faithfulness,
+    answer_relevancy,
+)
+
+from ragas import evaluate
+
+# this isn't supported yet with new version https://stackoverflow.com/questions/77982768/no-module-named-ragas-langchain
+# from ragas.langchain import RagasEvaluatorChain
 
 load_dotenv()
 
@@ -62,7 +76,7 @@ def add_text(history, text: str):
     return history
 
 
-class my_app:
+class MyApp:
     def __init__(self) -> None:
         self.session_id = None
         self.redis_url = os.environ.get("REDIS_URL")
@@ -72,7 +86,7 @@ class my_app:
         required_vars = {
             "REDIS_URL": os.environ.get("REDIS_URL"),
             "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
-            "COHERE_API_KEY": os.environ.get("COHERE_API_KEY")
+            "COHERE_API_KEY": os.environ.get("COHERE_API_KEY"),
         }
 
         missing_vars = {k: v for k, v in required_vars.items() if not v}
@@ -96,7 +110,7 @@ class my_app:
         self.use_rerankers = False
         self.top_k = 1
         self.distance_threshold = 0.30
-        self.selected_model = "gpt-4o"
+        self.selected_model = "gpt-3.5-turbo"
         self.llm_temperature = 0.7
         self.use_chat_history = False
 
@@ -117,14 +131,16 @@ class my_app:
         # Initialize rerankers
         self.RERANKERS = {
             "HuggingFace": HFCrossEncoderReranker("BAAI/bge-reranker-base"),
-            "Cohere": CohereReranker(limit=3, api_config={"api_key": self.cohere_api_key})
+            "Cohere": CohereReranker(
+                limit=3, api_config={"api_key": self.cohere_api_key}
+            ),
         }
 
         self.openai_client = OpenAI(api_key=self.openai_api_key)
 
         # Initialize RAGAS evaluator chains
-        self.faithfulness_chain = EvaluatorChain(metric=faithfulness)
-        self.answer_rel_chain = EvaluatorChain(metric=answer_relevancy)
+        # self.faithfulness_chain = RagasEvaluatorChain(metric=faithfulness)
+        # self.answer_rel_chain = RagasEvaluatorChain(metric=answer_relevancy)
 
         # # Initialize SemanticCache
         # self.llmcache = SemanticCache(
@@ -135,7 +151,9 @@ class my_app:
 
         # Initialize chat history if use_chat_history is True
         if self.use_chat_history:
-            self.chat_history = RedisChatMessageHistory(session_id=self.session_id, redis_url=self.redis_url)
+            self.chat_history = RedisChatMessageHistory(
+                session_id=self.session_id, redis_url=self.redis_url
+            )
         else:
             self.chat_history = None
 
@@ -152,7 +170,7 @@ class my_app:
             self.chat_history = RedisChatMessageHistory(
                 session_id=self.session_id,
                 redis_url=self.redis_url,
-                index_name="idx:chat_history"  # Use a common index for all chat histories
+                index_name="idx:chat_history",  # Use a common index for all chat histories
             )
         else:
             self.chat_history = None
@@ -169,7 +187,9 @@ class my_app:
         os.environ["OPENAI_API_KEY"] = self.openai_api_key
         os.environ["COHERE_API_KEY"] = self.cohere_api_key
 
-        self.credentials_set = all([self.redis_url, self.openai_api_key, self.cohere_api_key])
+        self.credentials_set = all(
+            [self.redis_url, self.openai_api_key, self.cohere_api_key]
+        )
 
         if self.credentials_set:
             self.initialize_components()
@@ -207,8 +227,12 @@ class my_app:
     def __call__(self, file: str, chunk_size: int, chunking_technique: str) -> Any:
         self.chunk_size = chunk_size
         self.chunking_technique = chunking_technique
-        documents, file_name = process_file(file, self.chunk_size, self.chunking_technique)
-        self.index_name = "".join(c if c.isalnum() else "_" for c in file_name.replace(" ", "_")).rstrip("_")
+        documents, file_name = process_file(
+            file, self.chunk_size, self.chunking_technique
+        )
+        self.index_name = "".join(
+            c if c.isalnum() else "_" for c in file_name.replace(" ", "_")
+        ).rstrip("_")
 
         print(f"DEBUG: Creating vector store with index name: {self.index_name}")
         embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
@@ -227,25 +251,33 @@ class my_app:
     def build_chain(self, vector_store):
         retriever = vector_store.as_retriever(search_kwargs={"k": self.top_k})
 
-        def format_docs(docs):
-            return "\n\n".join(doc.page_content for doc in docs)
+        # def format_docs(docs):
+        #     return "\n\n".join(doc.page_content for doc in docs)
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer."),
-            ("system", "Context: {context}"),
-            ("human", "{question}"),
-            ("system", "Provide a helpful and accurate answer based on the given context and question:")
-        ])
-
-        rag_chain = (
-            {
-                "context": retriever | format_docs,
-                "question": RunnablePassthrough()
-            }
-            | prompt
-            | self.cached_llm
-            | StrOutputParser()
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer.",
+                ),
+                ("system", "Context: {context}"),
+                ("human", "{input}"),
+                (
+                    "system",
+                    "Provide a helpful and accurate answer based on the given context and question:",
+                ),
+            ]
         )
+
+        # rag_chain = (
+        #     {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        #     | prompt
+        #     | self.cached_llm
+        #     | StrOutputParser()
+        # )
+
+        combine_docs_chain = create_stuff_documents_chain(self.cached_llm, prompt)
+        rag_chain = create_retrieval_chain(retriever, combine_docs_chain)
 
         print("DEBUG: RAG chain created successfully")
         return rag_chain
@@ -258,30 +290,37 @@ class my_app:
             session_state = self.initialize_session()
 
         if self.use_chat_history:
-            if 'chat_history' not in session_state or session_state['chat_history'] is None:
-                session_state['chat_history'] = RedisChatMessageHistory(
-                    session_id=session_state.get('session_id', str(ULID())),
+            if (
+                "chat_history" not in session_state
+                or session_state["chat_history"] is None
+            ):
+                session_state["chat_history"] = RedisChatMessageHistory(
+                    session_id=session_state.get("session_id", str(ULID())),
                     redis_url=self.redis_url,
-                    index_name="idx:chat_history"
+                    index_name="idx:chat_history",
                 )
-                print(f"DEBUG: Created new RedisChatMessageHistory with session_id: {session_state['session_id']}")
+                print(
+                    f"DEBUG: Created new RedisChatMessageHistory with session_id: {session_state['session_id']}"
+                )
 
             print("DEBUG: Using existing RedisChatMessageHistory")
             try:
-                messages_count = len(session_state['chat_history'].messages)
+                messages_count = len(session_state["chat_history"].messages)
                 print(f"DEBUG: Current chat history length: {messages_count}")
             except Exception as e:
                 print(f"DEBUG: Error getting chat history length: {str(e)}")
         else:
-            if 'chat_history' in session_state and session_state['chat_history']:
+            if "chat_history" in session_state and session_state["chat_history"]:
                 try:
-                    messages_count = len(session_state['chat_history'].messages)
-                    print(f"DEBUG: Clearing chat history. Current length: {messages_count}")
-                    session_state['chat_history'].clear()
+                    messages_count = len(session_state["chat_history"].messages)
+                    print(
+                        f"DEBUG: Clearing chat history. Current length: {messages_count}"
+                    )
+                    session_state["chat_history"].clear()
                     print("DEBUG: Cleared existing chat history")
                 except Exception as e:
                     print(f"DEBUG: Error clearing chat history: {str(e)}")
-            session_state['chat_history'] = None
+            session_state["chat_history"] = None
 
         print(f"DEBUG: Chat history setting updated to {self.use_chat_history}")
         return session_state
@@ -292,9 +331,9 @@ class my_app:
             print(f"DEBUG: Retrieved {len(messages)} messages from chat history")
             formatted_history = []
             for msg in messages:
-                if msg.type == 'human':
+                if msg.type == "human":
                     formatted_history.append(f"👤 **Human**: {msg.content}\n")
-                elif msg.type == 'ai':
+                elif msg.type == "ai":
                     formatted_history.append(f"🤖 **AI**: {msg.content}\n")
             return "\n".join(formatted_history)
         return "No chat history available."
@@ -322,7 +361,7 @@ class my_app:
         if self.vector_store:
             self.qa_chain = RetrievalQA.from_chain_type(
                 self.cached_llm,
-                retriever=self.vector_store,
+                retriever=self.vector_store.as_retriever(),
                 return_source_documents=True,
             )
 
@@ -354,7 +393,9 @@ class my_app:
         self.update_chain()
 
     def update_semantic_cache(self, use_semantic_cache: bool):
-        print(f"DEBUG: Updating semantic cache. use_semantic_cache: {use_semantic_cache}")
+        print(
+            f"DEBUG: Updating semantic cache. use_semantic_cache: {use_semantic_cache}"
+        )
         self.use_semantic_cache = use_semantic_cache
         if self.use_semantic_cache and self.index_name:
             semantic_cache_index_name = f"llmcache:{self.index_name}"
@@ -363,13 +404,17 @@ class my_app:
                 redis_url=self.redis_url,
                 distance_threshold=self.distance_threshold,
             )
-            print(f"DEBUG: Created SemanticCache with index: {semantic_cache_index_name}")
+            print(
+                f"DEBUG: Created SemanticCache with index: {semantic_cache_index_name}"
+            )
 
             # Ensure the index is created
             try:
                 self.llmcache._index.info()
             except ResponseError:
-                print(f"DEBUG: Creating new index for SemanticCache: {semantic_cache_index_name}")
+                print(
+                    f"DEBUG: Creating new index for SemanticCache: {semantic_cache_index_name}"
+                )
                 self.llmcache._index.create()
 
             self.update_llm()
@@ -444,22 +489,24 @@ class my_app:
         return self.RERANKERS
 
     def evaluate_response(self, query, result):
-        eval_input = {
-            "question": query,
-            "answer": result["result"],
-            "contexts": [],
-        }
+        ds = Dataset.from_dict(
+            {
+                "question": [query],
+                "answer": [result["answer"]],
+                "contexts": [[c.page_content for c in result["context"]]],
+            }
+        )
 
         try:
-            faithfulness_score = self.faithfulness_chain(eval_input)["faithfulness"]
-            answer_relevancy_score = self.answer_rel_chain(eval_input)[
-                "answer_relevancy"
-            ]
+            eval_results = evaluate(ds, [faithfulness, answer_relevancy])
+            # faithfulness_score = self.faithfulness_chain.invoke(eval_input)[
+            #     "faithfulness"
+            # ]
+            # answer_relevancy_score = self.answer_rel_chain(eval_input)[
+            #     "answer_relevancy"
+            # ]
 
-            return {
-                "faithfulness": faithfulness_score,
-                "answer_relevancy": answer_relevancy_score,
-            }
+            return eval_results
         except Exception as e:
             print(f"Error during RAGAS evaluation: {e}")
             return {}
@@ -507,7 +554,7 @@ def get_response(
     print(f"DEBUG: use_chat_history: {app.use_chat_history}")
 
     with get_openai_callback() as cb:
-        result = chain.invoke(query)
+        result = chain.invoke({"input": query})
         end_time = time.time()
 
         is_cache_hit = app.get_last_cache_status()
@@ -527,14 +574,16 @@ def get_response(
 
     elapsed_time = end_time - start_time
 
-    answer = result
-
-    if app.use_chat_history and session_state['chat_history'] is not None:
-        session_state['chat_history'].add_user_message(query)
-        session_state['chat_history'].add_ai_message(answer)
+    if app.use_chat_history and session_state["chat_history"] is not None:
+        session_state["chat_history"].add_user_message(query)
+        session_state["chat_history"].add_ai_message(result["answer"])
         try:
-            print(f"DEBUG: Added to chat history. Current length: {len(session_state['chat_history'].messages)}")
-            print(f"DEBUG: Last message in history: {session_state['chat_history'].messages[-1].content[:50]}...")
+            print(
+                f"DEBUG: Added to chat history. Current length: {len(session_state['chat_history'].messages)}"
+            )
+            print(
+                f"DEBUG: Last message in history: {session_state['chat_history'].messages[-1].content[:50]}..."
+            )
         except Exception as e:
             print(f"DEBUG: Error accessing chat history: {str(e)}")
     else:
@@ -548,14 +597,14 @@ def get_response(
         output = f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}"
 
     # Yield the response and output
-    for char in answer:
+    for char in result["answer"]:
         history[-1][-1] += char
         yield history, "", output, session_state
 
     # Perform RAGAS evaluation after yielding the response
-    # feedback = perform_ragas_evaluation(query, {"result": answer})
+    feedback = perform_ragas_evaluation(query, result)
     # TODO: temporarily disabled due to bug in RAGAS
-    feedback = ""
+    # feedback = ""
 
     # Prepare the final output with RAGAS evaluation
     final_output = f"{output}\n\n{feedback}"
@@ -580,21 +629,24 @@ def render_first(file, chunk_size, chunking_technique, session_state):
     image = render_first_page(file)
     # Create the chain when the PDF is uploaded, using the specified chunk size and technique
     app.chain = app(file, chunk_size, chunking_technique)
-    print(f"DEBUG: Chain created in render_first with chunk size {chunk_size} and {chunking_technique}")
+    print(
+        f"DEBUG: Chain created in render_first with chunk size {chunk_size} and {chunking_technique}"
+    )
     return image, [], session_state
+
 
 # Connect the show_history_btn to the display_chat_history function and show the modal
 def show_history(session_state):
     print(f"DEBUG: show_history called. use_chat_history: {app.use_chat_history}")
-    if app.use_chat_history and session_state['chat_history'] is not None:
+    if app.use_chat_history and session_state["chat_history"] is not None:
         try:
-            messages = session_state['chat_history'].messages
+            messages = session_state["chat_history"].messages
             print(f"DEBUG: Retrieved {len(messages)} messages from chat history")
             formatted_history = []
             for msg in messages:
-                if msg.type == 'human':
+                if msg.type == "human":
                     formatted_history.append(f"👤 **Human**: {msg.content}\n")
-                elif msg.type == 'ai':
+                elif msg.type == "ai":
                     formatted_history.append(f"🤖 **AI**: {msg.content}\n")
             history = "\n".join(formatted_history)
         except Exception as e:
@@ -606,13 +658,14 @@ def show_history(session_state):
     print(f"DEBUG: Formatted chat history: {history[:100]}...")
     return history, gr.update(visible=True)
 
+
 def reset_app():
     app.chat_history = []
     app.N = 0
     return [], None, "", gr.update(visible=False)
 
 
-app = my_app()
+app = MyApp()
 redis_theme, redis_styles = load_theme("redis")
 
 with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
@@ -625,9 +678,15 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     # Add Modal for credentials input
     with Modal(visible=False) as credentials_modal:
         gr.Markdown("## Enter Missing Credentials")
-        redis_url_input = gr.Textbox(label="REDIS_URL", type="password", value=app.redis_url or "")
-        openai_key_input = gr.Textbox(label="OPENAI_API_KEY", type="password", value=app.openai_api_key or "")
-        cohere_key_input = gr.Textbox(label="COHERE_API_KEY", type="password", value=app.cohere_api_key or "")
+        redis_url_input = gr.Textbox(
+            label="REDIS_URL", type="password", value=app.redis_url or ""
+        )
+        openai_key_input = gr.Textbox(
+            label="OPENAI_API_KEY", type="password", value=app.openai_api_key or ""
+        )
+        cohere_key_input = gr.Textbox(
+            label="COHERE_API_KEY", type="password", value=app.cohere_api_key or ""
+        )
         credentials_status = gr.Markdown("Please enter the missing credentials.")
         submit_credentials_btn = gr.Button("Submit Credentials")
 
@@ -672,7 +731,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                     )
 
             with gr.Row():
-                use_semantic_cache = gr.Checkbox(label="Use Semantic Cache", value=app.use_semantic_cache)
+                use_semantic_cache = gr.Checkbox(
+                    label="Use Semantic Cache", value=app.use_semantic_cache
+                )
                 distance_threshold = gr.Slider(
                     minimum=0.01,
                     maximum=1.0,
@@ -682,7 +743,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                 )
 
             with gr.Row():
-                use_reranker = gr.Checkbox(label="Use Reranker", value=app.use_rerankers)
+                use_reranker = gr.Checkbox(
+                    label="Use Reranker", value=app.use_rerankers
+                )
                 reranker_type = gr.Dropdown(
                     choices=list(app.rerankers().keys()),
                     label="Reranker Type",
@@ -691,7 +754,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
                 )
 
             with gr.Row():
-                use_chat_history = gr.Checkbox(label="Use Chat History", value=app.use_chat_history)
+                use_chat_history = gr.Checkbox(
+                    label="Use Chat History", value=app.use_chat_history
+                )
                 show_history_btn = gr.Button("Show Chat History")
 
         # Right Half
@@ -767,13 +832,13 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     use_chat_history.change(
         fn=app.update_chat_history,
         inputs=[use_chat_history, session_state],
-        outputs=[session_state]
+        outputs=[session_state],
     )
 
     show_history_btn.click(
         fn=show_history,
         inputs=[session_state],
-        outputs=[history_display, history_modal]
+        outputs=[history_display, history_modal],
     )
 
     # Event handlers
@@ -785,13 +850,14 @@ with gr.Blocks(theme=redis_theme, css=redis_styles + _LOCAL_CSS) as demo:
     demo.load(check_credentials, outputs=credentials_modal)
 
     def update_components_state():
-        return [gr.update(interactive=app.credentials_set and app.initialized) for _ in range(4)]
+        return [
+            gr.update(interactive=app.credentials_set and app.initialized)
+            for _ in range(4)
+        ]
 
     # handle toggle of the semantic cache usage
     use_semantic_cache.change(
-        fn=app.update_semantic_cache,
-        inputs=[use_semantic_cache],
-        outputs=[]
+        fn=app.update_semantic_cache, inputs=[use_semantic_cache], outputs=[]
     )
 
     # Use success event to update components state after submitting credentials
