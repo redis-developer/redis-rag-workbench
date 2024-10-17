@@ -1,8 +1,10 @@
 import os
-import gradio as gr
 from typing import Tuple
 
+import gradio as gr
+
 _ASSET_DIR = os.path.dirname(__file__) + "/../demos/assets"
+
 
 def load_theme(name: str) -> Tuple[gr.Theme, str]:
     """Load a pre-defined gradio theme.
