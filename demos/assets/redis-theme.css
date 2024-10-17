@@ -96,3 +96,20 @@ button:has(.image-container) {
   border-color: var(--col);
 }
 
+checkbox {
+  color: var(--col);
+}
+
+
+#txt {
+  flex: 1;
+}
+
+#submit-btn {
+  width: 50px;
+}
+
+#upload-btn,
+#reset-btn {
+  width: 50%;
+}
