@@ -113,6 +113,8 @@ def get_response(
     print(f"DEBUG: Invoking chain with query: {query}")
     print(f"DEBUG: use_chat_history: {app.use_chat_history}")
 
+    is_cache_hit = False
+
     with get_openai_callback() as cb:
         result = chain.invoke({"input": query})
         end_time = time.time()
