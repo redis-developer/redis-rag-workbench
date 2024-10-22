@@ -132,45 +132,45 @@ def get_response(
             total_cost = 0
             num_tokens = 0
 
-    print(f"Cache Hit: {is_cache_hit}")
+        print(f"Cache Hit: {is_cache_hit}")
 
-    elapsed_time = end_time - start_time
+        elapsed_time = end_time - start_time
 
-    if app.use_chat_history and session_state["chat_history"] is not None:
-        session_state["chat_history"].add_user_message(query)
-        session_state["chat_history"].add_ai_message(result["answer"])
-        try:
-            print(
-                f"DEBUG: Added to chat history. Current length: {len(session_state['chat_history'].messages)}"
-            )
-            print(
-                f"DEBUG: Last message in history: {session_state['chat_history'].messages[-1].content[:50]}..."
-            )
-        except Exception as e:
-            print(f"DEBUG: Error accessing chat history: {str(e)}")
-    else:
-        print("DEBUG: Chat history not updated (disabled or None)")
+        if app.use_chat_history and session_state["chat_history"] is not None:
+            session_state["chat_history"].add_user_message(query)
+            session_state["chat_history"].add_ai_message(result["answer"])
+            try:
+                print(
+                    f"DEBUG: Added to chat history. Current length: {len(session_state['chat_history'].messages)}"
+                )
+                print(
+                    f"DEBUG: Last message in history: {session_state['chat_history'].messages[-1].content[:50]}..."
+                )
+            except Exception as e:
+                print(f"DEBUG: Error accessing chat history: {str(e)}")
+        else:
+            print("DEBUG: Chat history not updated (disabled or None)")
 
-    # Prepare the output
-    if is_cache_hit:
-        output = f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00"
-    else:
-        tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
-        output = f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}"
+        # Prepare the output
+        if is_cache_hit:
+            output = f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00"
+        else:
+            tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
+            output = f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}"
 
-    # Yield the response and output
-    for char in result["answer"]:
-        history[-1][-1] += char
-        yield history, "", output, session_state
+        # Yield the response and output
+        for char in result["answer"]:
+            history[-1][-1] += char
+            yield history, "", output, session_state
 
-    # Perform RAGAS evaluation after yielding the response
-    feedback = perform_ragas_evaluation(query, result)
+        # Perform RAGAS evaluation after yielding the response
+        feedback = perform_ragas_evaluation(query, result)
 
-    # Prepare the final output with RAGAS evaluation
-    final_output = f"{output}\n\n{feedback}"
+        # Prepare the final output with RAGAS evaluation
+        final_output = f"{output}\n\n{feedback}"
 
-    # Yield one last time to update with RAGAS evaluation results
-    yield history, "", final_output, session_state
+        # Yield one last time to update with RAGAS evaluation results
+        yield history, "", final_output, session_state
 
 
 # gradio FE
