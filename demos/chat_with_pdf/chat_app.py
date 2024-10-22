@@ -300,9 +300,6 @@ class ChatApp:
 
     def update_top_k(self, new_top_k: int):
         self.top_k = new_top_k
-        if self.vector_store:
-            # Update the search_kwargs for the existing retriever
-            self.vector_store.search_kwargs["k"] = self.top_k
 
     def update_semantic_cache(self, use_semantic_cache: bool):
         print(
