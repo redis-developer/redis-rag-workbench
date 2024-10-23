@@ -1,21 +1,16 @@
 <div align="center">
 <div><img src="assets/redis-logo.svg" style="width: 130px"> </div>
 <h1>RAG Workbench</h1>
-<div align="center">
-
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Language](https://img.shields.io/github/languages/top/redis-developer/redis-rag-workbench)
 ![GitHub last commit](https://img.shields.io/github/last-commit/redis-developer/redis-rag-workbench)
 
 </div>
-<div>
-    🛠️ Redis RAG Workbench is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and more.
-</div>
+
+🛠️ **Redis RAG Workbench** is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and more.
 
 <div></div>
-
-
 
 ## Features
 
