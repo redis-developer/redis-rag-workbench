@@ -12,6 +12,7 @@
 
 <div></div>
 
+
 ## Features
 
 - Integration with Redis for vector storage and caching
@@ -57,6 +58,9 @@ poetry run uvicorn main:app --reload
 ```
 
 > This will start the server, and you can access the workbench by navigating to `http://localhost:8000` in your web browser.
+
+<div><img src="assets/workbench_sample.jpg" style="width: 625px"> </div>
+
 
 ## Project Structure
 
