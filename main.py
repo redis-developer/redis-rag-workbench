@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from demos.chat_with_pdf import chat_with_pdf
+from demos.workbench import workbench
 
 app = FastAPI()
 
@@ -50,14 +50,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # """
 
 app.mount(
-    chat_with_pdf.path(),
-    gr.mount_gradio_app(app, chat_with_pdf.demo, chat_with_pdf.path()),
+    workbench.path(),
+    gr.mount_gradio_app(app, workbench.demo, workbench.path()),
 )
 
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/chat_with_pdf")
+    return RedirectResponse(url="/workbench")
 
 
 if __name__ == "__main__":
