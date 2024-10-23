@@ -4,7 +4,7 @@ import gradio as gr
 from gradio_modal import Modal
 from langchain_community.callbacks import get_openai_callback
 
-from demos.chat_with_pdf.chat_app import ChatApp, generate_feedback
+from demos.workbench.chat_app import ChatApp, generate_feedback
 from shared_components.pdf_utils import render_file, render_first_page
 from shared_components.theme_management import load_theme
 
@@ -15,7 +15,7 @@ redis_theme, redis_styles = load_theme("redis")
 
 # functions for use in main
 def path():
-    return "/chat_with_pdf"
+    return "/workbench"
 
 
 def app_title():
