@@ -1,6 +1,21 @@
-# Redis RAG Workbench
+<div align="center">
+<div><img src="assets/redis-logo.svg" style="width: 130px"> </div>
+<h1>RAG Workbench</h1>
+<div align="center">
 
-Redis RAG Workbench is a playground for exploring Retrieval-Augmented Generation (RAG) techniques using Redis. This project provides a collection of demos showcasing various RAG implementations and utilities.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Language](https://img.shields.io/github/languages/top/redis-developer/redis-rag-workbench)
+![GitHub last commit](https://img.shields.io/github/last-commit/redis-developer/redis-rag-workbench)
+
+</div>
+<div>
+    🛠️ Redis RAG Workbench is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and more.
+</div>
+
+<div></div>
+
+
 
 ## Features
 
@@ -10,36 +25,28 @@ Redis RAG Workbench is a playground for exploring Retrieval-Augmented Generation
 
 ## Prerequisites
 
-- Python 3.11 or higher
-- Redis server
-- OpenAI API key
-- Cohere API key (for certain reranking features)
+- Python >= 3.11 and [Poetry](https://python-poetry.org/docs/#installation)
+- Redis Stack
+   ```bash
+   docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
+   ```
+- [OpenAI API key](https://platform.openai.com/)
+- [Cohere API key](https://cohere.com/) (for optional reranking features)
 
 ## Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/redis-rag-workbench.git
+   git clone https://github.com/redis-developer/redis-rag-workbench.git
    cd redis-rag-workbench
    ```
 
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
-
-3. Install Poetry (see detailed instructions at [Poetry Installation](https://python-poetry.org/docs/#installation)):
-   ```bash
-   curl -sSL https://install.python-poetry.org | python3 -
-   ```
-
-3. Install the required dependencies:
+2. Install the required dependencies with Poetry:
    ```bash
    poetry install --no-root
    ```
 
-4. Set up your environment variables by creating a `.env` file in the project root:
+3. Set up your environment variables by creating a `.env` file in the project root:
    ```env
    REDIS_URL=your_redis_url
    OPENAI_API_KEY=your_openai_api_key
@@ -51,10 +58,10 @@ Redis RAG Workbench is a playground for exploring Retrieval-Augmented Generation
 To start the application, run:
 
 ```bash
-uvicorn main:app --reload
+poetry run uvicorn main:app --reload
 ```
 
-This will start the server, and you can access the demos by navigating to `http://localhost:8000` in your web browser.
+> This will start the server, and you can access the workbench by navigating to `http://localhost:8000` in your web browser.
 
 ## Project Structure
 
