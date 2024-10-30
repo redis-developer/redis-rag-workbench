@@ -358,3 +358,6 @@ pip-selfcheck.json
 
 # configuration file
 config.yaml
+
+# PDF Storage
+pdf_storage/*.pdf
