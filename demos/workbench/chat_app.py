@@ -1,6 +1,6 @@
 import os
 import os.path
-from typing import Any
+from typing import Any, List, Optional
 
 from datasets import Dataset
 from dotenv import load_dotenv
@@ -11,7 +11,6 @@ from langchain_openai import ChatOpenAI, OpenAI, OpenAIEmbeddings
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
 
-# from ragas.integrations.langchain import EvaluatorChain TODO: decide if we can delete the other code
 from ragas.metrics import answer_relevancy, faithfulness
 from redis.exceptions import ResponseError
 from redisvl.extensions.llmcache import SemanticCache
@@ -20,6 +19,7 @@ from ulid import ULID
 
 from shared_components.cached_llm import CachedLLM
 from shared_components.llm_utils import openai_models
+from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
 
 load_dotenv()
@@ -30,6 +30,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 class ChatApp:
     def __init__(self) -> None:
         self.session_id = None
+        self.pdf_manager = None
+        self.current_pdf_index = None
+
         self.redis_url = os.environ.get("REDIS_URL")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.cohere_api_key = os.environ.get("COHERE_API_KEY")
@@ -78,6 +81,8 @@ class ChatApp:
     def initialize_components(self):
         if not self.credentials_set:
             raise ValueError("Credentials must be set before initializing components")
+
+        self.pdf_manager = PDFManager(self.redis_url)
 
         # Initialize rerankers
         self.RERANKERS = {
@@ -135,18 +140,6 @@ class ChatApp:
 
         return "Credentials updated successfully. You can now use the demo."
 
-    def update_llm(self):
-        self.llm = ChatOpenAI(
-            model=self.selected_model,
-            temperature=self.llm_temperature,
-            api_key=self.openai_api_key,
-        )
-
-        if self.use_semantic_cache and self.llmcache:
-            self.cached_llm = CachedLLM(self.llm, self.llmcache)
-        else:
-            self.cached_llm = self.llm
-
     def get_reranker_choices(self):
         if self.initialized:
             return list(self.RERANKERS.keys())
@@ -159,27 +152,12 @@ class ChatApp:
             self.llmcache._index.create()
 
     def __call__(self, file: str, chunk_size: int, chunking_technique: str) -> Any:
+        """Process a file upload directly - used by the UI."""
         self.chunk_size = chunk_size
         self.chunking_technique = chunking_technique
-        documents, file_name = process_file(
-            file, self.chunk_size, self.chunking_technique
-        )
-        self.index_name = "".join(
-            c if c.isalnum() else "_" for c in file_name.replace(" ", "_")
-        ).rstrip("_")
 
-        embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
-        self.vector_store = RedisVectorStore.from_documents(
-            documents,
-            embeddings,
-            redis_url=self.redis_url,
-            index_name=self.index_name,
-        )
-
-        self.update_semantic_cache(self.use_semantic_cache)
-
-        self.chain = self.build_chain(self.vector_store)
-        return self.chain
+        # First store the PDF and get its index
+        return self.process_pdf(file, chunk_size, chunking_technique)
 
     def build_chain(self, vector_store):
         retriever = vector_store.as_retriever(search_kwargs={"k": self.top_k})
@@ -202,11 +180,9 @@ class ChatApp:
         combine_docs_chain = create_stuff_documents_chain(self.cached_llm, prompt)
         rag_chain = create_retrieval_chain(retriever, combine_docs_chain)
 
-        print("DEBUG: RAG chain created successfully")
         return rag_chain
 
     def update_chat_history(self, use_chat_history: bool, session_state):
-        print(f"DEBUG: Updating chat history. use_chat_history: {use_chat_history}")
         self.use_chat_history = use_chat_history
 
         if session_state is None:
@@ -222,36 +198,24 @@ class ChatApp:
                     redis_url=self.redis_url,
                     index_name="idx:chat_history",
                 )
-                print(
-                    f"DEBUG: Created new RedisChatMessageHistory with session_id: {session_state['session_id']}"
-                )
 
-            print("DEBUG: Using existing RedisChatMessageHistory")
             try:
                 messages_count = len(session_state["chat_history"].messages)
-                print(f"DEBUG: Current chat history length: {messages_count}")
             except Exception as e:
                 print(f"DEBUG: Error getting chat history length: {str(e)}")
         else:
             if "chat_history" in session_state and session_state["chat_history"]:
                 try:
-                    messages_count = len(session_state["chat_history"].messages)
-                    print(
-                        f"DEBUG: Clearing chat history. Current length: {messages_count}"
-                    )
                     session_state["chat_history"].clear()
-                    print("DEBUG: Cleared existing chat history")
                 except Exception as e:
                     print(f"DEBUG: Error clearing chat history: {str(e)}")
             session_state["chat_history"] = None
 
-        print(f"DEBUG: Chat history setting updated to {self.use_chat_history}")
         return session_state
 
     def get_chat_history(self):
         if self.chat_history and self.use_chat_history:
             messages = self.chat_history.messages
-            print(f"DEBUG: Retrieved {len(messages)} messages from chat history")
             formatted_history = []
             for msg in messages:
                 if msg.type == "human":
@@ -262,9 +226,7 @@ class ChatApp:
         return "No chat history available."
 
     def update_llm(self):
-        print("DEBUG: Updating LLM")
         if self.llm is None:
-            print("DEBUG: self.llm is None, initializing new LLM")
             self.llm = ChatOpenAI(
                 model=self.selected_model,
                 temperature=self.llm_temperature,
@@ -272,13 +234,9 @@ class ChatApp:
             )
 
         if self.use_semantic_cache:
-            print("DEBUG: Using semantic cache")
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
         else:
-            print("DEBUG: Not using semantic cache")
             self.cached_llm = self.llm
-
-        print(f"DEBUG: Updated LLM type: {type(self.cached_llm)}")
 
     def update_model(self, new_model: str):
         self.selected_model = new_model
@@ -302,9 +260,6 @@ class ChatApp:
         self.top_k = new_top_k
 
     def update_semantic_cache(self, use_semantic_cache: bool):
-        print(
-            f"DEBUG: Updating semantic cache. use_semantic_cache: {use_semantic_cache}"
-        )
         self.use_semantic_cache = use_semantic_cache
         if self.use_semantic_cache and self.index_name:
             semantic_cache_index_name = f"llmcache:{self.index_name}"
@@ -313,17 +268,11 @@ class ChatApp:
                 redis_url=self.redis_url,
                 distance_threshold=self.distance_threshold,
             )
-            print(
-                f"DEBUG: Created SemanticCache with index: {semantic_cache_index_name}"
-            )
 
             # Ensure the index is created
             try:
                 self.llmcache._index.info()
             except ResponseError:
-                print(
-                    f"DEBUG: Creating new index for SemanticCache: {semantic_cache_index_name}"
-                )
                 self.llmcache._index.create()
 
             self.update_llm()
@@ -331,9 +280,6 @@ class ChatApp:
                 self.chain = self.build_chain(self.vector_store)
         else:
             self.llmcache = None
-            print("DEBUG: SemanticCache disabled")
-
-        print(f"DEBUG: Updated semantic cache setting to {use_semantic_cache}")
 
     def update_distance_threshold(self, new_threshold: float):
         self.distance_threshold = new_threshold
@@ -352,12 +298,7 @@ class ChatApp:
         return False
 
     def rerank_results(self, query, results):
-        print(
-            f"DEBUG: Re-ranking step - Active: {self.use_reranker}, Reranker: {self.reranker_type}"
-        )
-
         if not self.use_reranker:
-            print("DEBUG: Re-ranking skipped (not active)")
             return results, None, None
 
         reranker = self.RERANKERS[self.reranker_type]
@@ -413,6 +354,80 @@ class ChatApp:
         except Exception as e:
             print(f"Error during RAGAS evaluation: {e}")
             return {}
+
+    def process_pdf(self, file, chunk_size: int, chunking_technique: str) -> Any:
+        """Process a new PDF file upload."""
+        try:
+            # First process the file to get documents
+            documents, _ = process_file(file, chunk_size, chunking_technique)
+
+            # Store the PDF and metadata first
+            self.current_pdf_index = self.pdf_manager.add_pdf(
+                file=file,
+                chunk_size=chunk_size,
+                chunking_technique=chunking_technique,
+                total_chunks=len(documents)
+            )
+
+            # Set the index name from the PDF manager
+            self.index_name = self.current_pdf_index
+
+            # Create the vector store using the same index
+            embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
+            self.vector_store = RedisVectorStore.from_documents(
+                documents,
+                embeddings,
+                redis_url=self.redis_url,
+                index_name=self.index_name
+            )
+
+            self.update_semantic_cache(self.use_semantic_cache)
+            self.chain = self.build_chain(self.vector_store)
+            return self.chain
+
+        except Exception as e:
+            print(f"Error during process_pdf: {e}")
+
+    def load_pdf(self, index_name: str) -> bool:
+        """Load a previously processed PDF."""
+        try:
+            # Get the metadata
+            metadata = self.pdf_manager.get_pdf_metadata(index_name)
+            if not metadata:
+                return False
+
+            # Set the current state
+            self.current_pdf_index = index_name
+            self.chunk_size = metadata.chunk_size
+            self.chunking_technique = metadata.chunking_technique
+
+            # Set up vector store with embeddings as first argument
+            embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
+            self.vector_store = RedisVectorStore(
+                embeddings,  # First positional argument
+                redis_url=self.redis_url,
+                index_name=self.current_pdf_index
+            )
+
+            # Update semantic cache if enabled
+            self.update_semantic_cache(self.use_semantic_cache)
+
+            # Build the chain
+            self.chain = self.build_chain(self.vector_store)
+
+            return True
+
+        except Exception as e:
+            print(f"ERROR: Failed to load PDF {index_name}: {str(e)}")
+            return False
+
+    def search_pdfs(self, query: str = "") -> List[PDFMetadata]:
+        """Search available PDFs."""
+        return self.pdf_manager.search_pdfs(query)
+
+    def get_pdf_file(self, index_name: str) -> Optional[str]:
+        """Get the file path for a stored PDF."""
+        return self.pdf_manager.get_pdf_file(index_name)
 
 
 def generate_feedback(evaluation_scores):

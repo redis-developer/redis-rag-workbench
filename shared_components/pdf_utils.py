@@ -49,10 +49,26 @@ def render_file(file: str, page_num: int = 0) -> Image.Image:
 
 
 def render_first_page(file) -> Image.Image:
-    doc = fitz.open(file.name)
-    page = doc[0]
-    # Render the page as a PNG image with a resolution of 300 DPI
-    pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
-    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    """Render the first page of a PDF.
 
-    return image
+    Args:
+        file: Either a file object (from upload) or a path to a PDF file
+    """
+    try:
+        # Check if we got a path or a file object
+        if isinstance(file, str):
+            file_path = file
+        else:
+            file_path = file.name
+
+        print(f"DEBUG: Opening PDF from: {file_path}")
+        doc = fitz.open(file_path)
+        page = doc[0]
+        # Render the page as a PNG image with a resolution of 300 DPI
+        pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
+        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        doc.close()  # Make sure to close the document
+        return image
+    except Exception as e:
+        print(f"ERROR: Failed to render PDF page: {str(e)}")
+        raise
