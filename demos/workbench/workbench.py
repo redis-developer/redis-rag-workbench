@@ -16,7 +16,7 @@ redis_theme, redis_styles = load_theme("redis")
 
 # functions for use in main
 def path():
-    return "/chat_with_pdf"
+    return "/workbench"
 
 
 def app_title():
