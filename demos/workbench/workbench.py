@@ -312,6 +312,15 @@ def update_llm_model_options(selected_llm_provider, llm_model):
         return gr.Dropdown(choices=models, value=models[0])
 
 
+HEADER = """
+<div style="display: flex; justify-content: center;">
+    <img src="../assets/redis-logo.svg" style="height: 2rem">
+</div>
+<div style="text-align: center">
+    <h1>RAG Workbench</h1>
+</div>
+"""
+
 # gradio FE
 with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as demo:
     session_state = gr.State()
