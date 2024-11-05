@@ -173,8 +173,17 @@ def get_response(
         yield history, "", final_output, session_state
 
 
+HEADER = """
+<div style="display: flex; justify-content: center;">
+    <img src="../assets/redis-logo.svg" style="height: 2rem">
+</div>
+<div style="text-align: center">
+    <h1>RAG Workbench</h1>
+</div>
+"""
+
 # gradio FE
-with gr.Blocks(theme=redis_theme, css=redis_styles) as demo:
+with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as demo:
     session_state = gr.State()
 
     # Add Modal for credentials input
@@ -191,6 +200,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles) as demo:
         )
         credentials_status = gr.Markdown("Please enter the missing credentials.")
         submit_credentials_btn = gr.Button("Submit Credentials")
+
+    with gr.Row():
+        gr.HTML(HEADER)
 
     with gr.Row():
         # Left Half
