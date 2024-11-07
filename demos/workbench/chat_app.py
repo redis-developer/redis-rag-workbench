@@ -7,7 +7,13 @@ from dotenv import load_dotenv
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAI, OpenAIEmbeddings
+from langchain_openai import (
+    AzureChatOpenAI,
+    AzureOpenAIEmbeddings,
+    ChatOpenAI,
+    OpenAI,
+    OpenAIEmbeddings,
+)
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
 from ragas.metrics import answer_relevancy, faithfulness
@@ -35,6 +41,15 @@ class ChatApp:
         self.redis_url = os.environ.get("REDIS_URL")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.cohere_api_key = os.environ.get("COHERE_API_KEY")
+
+        self.azure_domain = os.environ.get("AZURE_DOMAIN", "")  # ex: redis-azure-test
+        self.azure_llm_api_version = os.environ.get(
+            "AZURE_LLM_API_VERSION", ""
+        )  # ex: 2024-08-01-preview
+        self.azure_emb_api_version = os.environ.get(
+            "AZURE_EMB_API_VERSION", ""
+        )  # ex: 2024-08-01-preview
+        self.azure_api_key = os.environ.get("AZURE_API_KEY", "")  # ex: 1234567890abcdef
 
         required_vars = {
             "REDIS_URL": os.environ.get("REDIS_URL"),
@@ -68,7 +83,7 @@ class ChatApp:
 
         self.available_models = {
             "openai": sorted(openai_models()),
-            "azure-openai": ["gpt-35-turbo"],
+            "azure-openai": ["gpt-35-turbo-16k"],
         }
         self.llm_model_provider = "openai"
         self.llm_model_providers = ["openai", "azure-openai"]
@@ -84,7 +99,7 @@ class ChatApp:
             ],  # TODO: figure out the embedding here
             "azure-openai": ["text-embedding-ada-002"],
         }
-        self.embedding_model = "text-ada"
+        self.embedding_model = None
 
         self.llm = None
         self.cached_llm = None
@@ -244,19 +259,13 @@ class ChatApp:
 
     def get_llm(self, model_provider, model_name):
         if model_provider == "azure-openai":
-            domain = os.environ.get("AZURE_LLM_DOMAIN")  # ex: redis-azure-test
-            api_version = os.environ.get(
-                "AZURE_LLM_API_VERSION"
-            )  # ex: 2024-08-01-preview
-            api_endpoint = f"https://{domain}.openai.azure.com/openai/deployments/{model_name}/chat/completions?api-version={api_version}"
+            api_endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{model_name}/chat/completions?api-version={api_version}"
 
             try:
                 model = AzureChatOpenAI(
-                    azure_deployment=os.environ.get(
-                        "AZURE_LLM_DEPLOYMENT"
-                    ),  # or your deployment
-                    api_version=api_version,  # or your api version
-                    temperature=0,
+                    azure_deployment=model_name,  # or your deployment
+                    api_version=self.azure_llm_api_version,  # or your api version
+                    temperature=self.llm_temperature,
                     max_tokens=None,
                     timeout=None,
                     max_retries=2,
@@ -277,27 +286,25 @@ class ChatApp:
         return model
 
     def update_llm(self):
-        if self.llm is None:
-            self.llm = self.get_llm(self.llm_model_provider, self.selected_model)
+        self.llm = self.get_llm(self.llm_model_provider, self.selected_model)
 
         if self.use_semantic_cache:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
         else:
             self.cached_llm = self.llm
 
+        # update the chain with the new model
+        # TODO: probably a better way to manage the lifecycle than to check the null because that could lead to odd error states
+        if self.vector_store:
+            self.chain = self.build_chain(self.vector_store)
+
     def update_model(self, new_model: str, new_model_provider: str):
-        # TODO: this should toggle based on the model provider
         self.selected_model = new_model
         self.llm_model_provider = new_model_provider
         self.update_llm()
 
     def update_temperature(self, new_temperature: float):
         self.llm_temperature = new_temperature
-        self.llm = ChatOpenAI(
-            model=self.selected_model,
-            temperature=self.llm_temperature,
-            api_key=self.openai_api_key,
-        )
         self.update_llm()
 
     def update_top_k(self, new_top_k: int):
@@ -399,7 +406,24 @@ class ChatApp:
             print(f"Error during RAGAS evaluation: {e}")
             return {}
 
-    def process_pdf(self, file, chunk_size: int, chunking_technique: str) -> Any:
+    def update_embedding_model_provider(self, new_provider: str):
+        self.embedding_model_provider = new_provider
+
+    def get_embedding_model(self):
+        if self.embedding_model_provider == "azure-openai":
+            endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{self.embedding_model}/embeddings?api-version={self.azure_emb_api_version}"
+            return AzureOpenAIEmbeddings(
+                model=self.embedding_model,
+                azure_endpoint=endpoint,
+                api_key=self.azure_api_key,
+                api_version=self.azure_emb_api_version,
+            )
+        else:
+            return OpenAIEmbeddings(api_key=self.openai_api_key)
+
+    def process_pdf(
+        self, file, chunk_size: int, chunking_technique: str, embedding_model: str
+    ) -> Any:
         """Process a new PDF file upload."""
         try:
             # First process the file to get documents
@@ -415,11 +439,12 @@ class ChatApp:
 
             # Set the index name from the PDF manager
             self.index_name = self.current_pdf_index
+            self.embedding_model = embedding_model
 
             # Create the vector store using the same index
+            embeddings = self.get_embedding_model()
 
-            # TODO: this should update with the embedding model
-            embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
+            # embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
             self.vector_store = RedisVectorStore.from_documents(
                 documents,
                 embeddings,
@@ -448,8 +473,8 @@ class ChatApp:
             self.chunking_technique = metadata.chunking_technique
 
             # Set up vector store with embeddings as first argument
-            # TODO: this should be a variable selection
-            embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
+            # TODO: the embedding model probably needs to get store in the index for the loading option
+            embeddings = self.get_embedding_model()
             self.vector_store = RedisVectorStore(
                 embeddings,  # First positional argument
                 redis_url=self.redis_url,

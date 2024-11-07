@@ -94,13 +94,13 @@ def show_history(session_state):
     return history, gr.update(visible=True)
 
 
-def render_first(file, chunk_size, chunking_technique, session_state):
+def render_first(file, chunk_size, chunking_technique, embedding_model, session_state):
     """Handle initial PDF upload and rendering."""
     if not session_state:
         session_state = app.initialize_session()
 
     # First process and store the PDF properly
-    app.process_pdf(file, chunk_size, chunking_technique)
+    app.process_pdf(file, chunk_size, chunking_technique, embedding_model)
 
     # Then render the first page
     image = render_first_page(file)
@@ -296,27 +296,19 @@ HEADER = """
 """
 
 
-def update_dropdown(selected_value, dropdown2):
-    # selected_value = dropdown1.value
-    if selected_value == "Fruits":
-        return gr.Dropdown(choices=["Apple", "Banana", "Cherry"])
-    elif selected_value == "Vegetables":
-        return gr.Dropdown(choices=["Carrot", "Broccoli", "Spinach"])
-    else:
-        return gr.Dropdown(choices=[])
-
-
 def update_embedding_model_options(embedding_model_provider, embedding_model):
     # gradio has a weird thing where you have to include the second variable even if it's unused https://stackoverflow.com/questions/76693922/what-am-i-doing-wrong-with-gradio-dropdown-how-to-dynamically-modify-the-choice
-    models = app.embedding_models[embedding_model_provider]
-    print("hello")
-    print(models)
-    return gr.Dropdown(choices=models)
+    if app.embedding_model_provider != embedding_model_provider:
+        app.update_embedding_model_provider(embedding_model_provider)
+        models = app.embedding_models[embedding_model_provider]
+        return gr.Dropdown(choices=models, value=models[0])
 
 
 def update_llm_model_options(llm_model_provider, llm_model):
-    models = app.available_models[llm_model_provider]
-    return gr.Dropdown(choices=models, value=models[0])
+    if app.llm_model_provider != llm_model_provider:
+        app.update_model(llm_model, llm_model_provider)
+        models = app.available_models[llm_model_provider]
+        return gr.Dropdown(choices=models, value=models[0])
 
 
 # gradio FE
@@ -342,16 +334,6 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
     with gr.Row():
         gr.HTML(HEADER)
-
-    # with gr.Row():
-    #     # test
-    #     dropdown1 = gr.Dropdown(choices=["Fruits", "Vegetables"], label="Category")
-    #     dropdown2 = gr.Dropdown(choices=[], label="Items")
-
-    #     # Set up the event listener to update dropdown2 when dropdown1 changes
-    #     dropdown1.change(
-    #         fn=update_dropdown, inputs=[dropdown1, dropdown2], outputs=dropdown2
-    #     )
 
     with gr.Row():
         # Left Half
@@ -571,7 +553,13 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
     upload_btn.upload(
         fn=render_first,
-        inputs=[upload_btn, chunk_size, chunking_technique, session_state],
+        inputs=[
+            upload_btn,
+            chunk_size,
+            chunking_technique,
+            embedding_model,
+            session_state,
+        ],
         outputs=[show_img, chatbot, session_state],
     ).success(
         fn=lambda: (gr.update(visible=False), format_pdf_list(app.search_pdfs())),
