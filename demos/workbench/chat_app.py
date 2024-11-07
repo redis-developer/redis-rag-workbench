@@ -7,10 +7,9 @@ from dotenv import load_dotenv
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI, OpenAI, OpenAIEmbeddings
+from langchain_openai import AzureChatOpenAI, ChatOpenAI, OpenAI, OpenAIEmbeddings
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
-
 from ragas.metrics import answer_relevancy, faithfulness
 from redis.exceptions import ResponseError
 from redisvl.extensions.llmcache import SemanticCache
@@ -64,11 +63,29 @@ class ChatApp:
         self.use_rerankers = False
         self.top_k = 1
         self.distance_threshold = 0.30
-        self.selected_model = "gpt-3.5-turbo"
         self.llm_temperature = 0.7
         self.use_chat_history = False
 
-        self.available_models = sorted(openai_models())
+        self.available_models = {
+            "openai": sorted(openai_models()),
+            "azure-openai": ["gpt-35-turbo"],
+        }
+        self.llm_model_provider = "openai"
+        self.llm_model_providers = ["openai", "azure-openai"]
+        self.selected_model = "gpt-3.5-turbo"
+
+        self.embedding_model_providers = ["openai", "azure-openai"]
+        self.embedding_model_provider = "openai"
+
+        self.embedding_models = {
+            "openai": [
+                "gpt-3.5-turbo",
+                "gpt-3.5-turbo-ada",
+            ],  # TODO: figure out the embedding here
+            "azure-openai": ["text-embedding-ada-002"],
+        }
+        self.embedding_model = "text-ada"
+
         self.llm = None
         self.cached_llm = None
         self.vector_store = None
@@ -225,26 +242,53 @@ class ChatApp:
             return "\n".join(formatted_history)
         return "No chat history available."
 
+    def get_llm(self, model_provider, model_name):
+        if model_provider == "azure-openai":
+            domain = os.environ.get("AZURE_LLM_DOMAIN")  # ex: redis-azure-test
+            api_version = os.environ.get(
+                "AZURE_LLM_API_VERSION"
+            )  # ex: 2024-08-01-preview
+            api_endpoint = f"https://{domain}.openai.azure.com/openai/deployments/{model_name}/chat/completions?api-version={api_version}"
+
+            try:
+                model = AzureChatOpenAI(
+                    azure_deployment=os.environ.get(
+                        "AZURE_LLM_DEPLOYMENT"
+                    ),  # or your deployment
+                    api_version=api_version,  # or your api version
+                    temperature=0,
+                    max_tokens=None,
+                    timeout=None,
+                    max_retries=2,
+                    api_key=os.environ.get("AZURE_LLM_API_KEY"),
+                    azure_endpoint=api_endpoint,
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
+                )
+        else:
+            model = ChatOpenAI(
+                model=model_name,
+                temperature=0,
+                api_key=os.environ.get("OPENAI_API_KEY"),
+            )
+
+        return model
+
     def update_llm(self):
         if self.llm is None:
-            self.llm = ChatOpenAI(
-                model=self.selected_model,
-                temperature=self.llm_temperature,
-                api_key=self.openai_api_key,
-            )
+            self.llm = self.get_llm(self.llm_model_provider, self.selected_model)
 
         if self.use_semantic_cache:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
         else:
             self.cached_llm = self.llm
 
-    def update_model(self, new_model: str):
+    def update_model(self, new_model: str, new_model_provider: str):
+        # TODO: this should toggle based on the model provider
         self.selected_model = new_model
-        self.llm = ChatOpenAI(
-            model=self.selected_model,
-            temperature=self.llm_temperature,
-            api_key=self.openai_api_key,
-        )
+        self.llm_model_provider = new_model_provider
         self.update_llm()
 
     def update_temperature(self, new_temperature: float):
@@ -366,19 +410,21 @@ class ChatApp:
                 file=file,
                 chunk_size=chunk_size,
                 chunking_technique=chunking_technique,
-                total_chunks=len(documents)
+                total_chunks=len(documents),
             )
 
             # Set the index name from the PDF manager
             self.index_name = self.current_pdf_index
 
             # Create the vector store using the same index
+
+            # TODO: this should update with the embedding model
             embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
             self.vector_store = RedisVectorStore.from_documents(
                 documents,
                 embeddings,
                 redis_url=self.redis_url,
-                index_name=self.index_name
+                index_name=self.index_name,
             )
 
             self.update_semantic_cache(self.use_semantic_cache)
@@ -402,11 +448,12 @@ class ChatApp:
             self.chunking_technique = metadata.chunking_technique
 
             # Set up vector store with embeddings as first argument
+            # TODO: this should be a variable selection
             embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
             self.vector_store = RedisVectorStore(
                 embeddings,  # First positional argument
                 redis_url=self.redis_url,
-                index_name=self.current_pdf_index
+                index_name=self.current_pdf_index,
             )
 
             # Update semantic cache if enabled
