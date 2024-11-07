@@ -1,6 +1,6 @@
 import gradio as gr
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from demos.workbench import workbench
@@ -8,56 +8,22 @@ from demos.workbench import workbench
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
-# Custom CSS for centering the list and making it scrollable
-# css = """
-# html, body {
-#     height: 100%;
-#     margin: 0;
-#     display: flex;
-#     justify-content: center;
-#     align-items: center;
-#     background-color: #f5f5f5;
-# }
 
-# .centered-container {
-#     display: flex;
-#     flex-direction: column;
-#     justify-content: center;
-#     align-items: center;
-#     height: 100%;
-#     width: 100%;
-# }
+favicon_path = "static/favicon.ico"
 
-# .scrollable-list {
-#     max-height: 80vh;
-#     overflow-y: auto;
-#     width: 300px;
-#     text-align: center;
-# }
-# .scrollable-list button {
-#     width: 100%;
-#     padding: 10px;
-#     margin: 5px 0;
-#     border: none;
-#     background-color: #3498db;
-#     color: white;
-#     cursor: pointer;
-# }
-# .scrollable-list button:hover {
-#     background-color: #2980b9;
-# }
-# """
-
-app.mount(
-    workbench.path(),
-    gr.mount_gradio_app(app, workbench.demo, workbench.path()),
-)
+app = gr.mount_gradio_app(app, workbench.demo, workbench.path())
 
 
 @app.get("/")
 async def root():
     return RedirectResponse(url="/workbench")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(favicon_path)
 
 
 if __name__ == "__main__":
