@@ -16,6 +16,7 @@ from langchain_openai import (
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
 from ragas.metrics import answer_relevancy, faithfulness
+from ragas.llms import LangchainLLMWrapper
 from redis.exceptions import ResponseError
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
@@ -93,6 +94,7 @@ class ChatApp:
         self.selected_embedding_model = "text-embedding-ada-002"
 
         self.llm = None
+        self.evalutor_llm = None
         self.cached_llm = None
         self.vector_store = None
         self.llmcache = None
@@ -287,6 +289,7 @@ class ChatApp:
 
     def update_llm(self):
         self.llm = self.get_llm()
+        self.evalutor_llm = LangchainLLMWrapper(self.llm)
 
         if self.use_semantic_cache:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
@@ -399,7 +402,11 @@ class ChatApp:
         )
 
         try:
-            eval_results = evaluate(ds, [faithfulness, answer_relevancy])
+            eval_results = evaluate(
+                dataset=ds,
+                metrics=[faithfulness, answer_relevancy],
+                llm=self.evalutor_llm
+            )
 
             return eval_results
         except Exception as e:
