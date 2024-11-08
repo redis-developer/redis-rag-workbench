@@ -113,3 +113,29 @@ checkbox {
 #reset-btn {
   width: 50%;
 }
+
+/* Disable the upload button */
+.pdf-parent > button .wrap {
+  visibility: hidden;
+  min-height: 300px;
+}
+
+.pdf-parent > button .wrap svg {
+  display: none;
+}
+
+/* Disable only the main upload button */
+.pdf-parent > button {
+  pointer-events: none;
+}
+
+/* Ensure navigation buttons work */
+.pdf-parent .button-row button {
+  pointer-events: auto;
+}
+
+/* Optional: Make navigation buttons more visible */
+.pdf-parent .button-row {
+  z-index: 1;
+  position: relative;
+}

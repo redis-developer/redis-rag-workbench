@@ -3,10 +3,10 @@ from datetime import datetime
 
 import gradio as gr
 from gradio_modal import Modal
+from gradio_pdf import PDF
 from langchain_community.callbacks import get_openai_callback
 
 from demos.workbench.chat_app import ChatApp, generate_feedback
-from shared_components.pdf_utils import render_first_page
 from shared_components.theme_management import load_theme
 
 # app to be used in the gradio app
@@ -102,10 +102,10 @@ def render_first(file, chunk_size, chunking_technique, selected_embedding_model,
     # First process and store the PDF properly
     app.process_pdf(file, chunk_size, chunking_technique, selected_embedding_model)
 
-    # Then render the first page
-    image = render_first_page(file)
+    # Create PDF viewer
+    pdf_viewer = PDF(value=file.name, starting_page=1)
 
-    return image, [], session_state
+    return pdf_viewer, [], session_state
 
 
 def perform_ragas_evaluation(query, result):
@@ -255,15 +255,16 @@ def handle_pdf_selection(evt: gr.SelectData, pdf_list):
         # Render the first page for display
         print(f"DEBUG: Rendering first page of {pdf_path}")
         try:
-            image = render_first_page(pdf_path)
-            print(f"DEBUG: Successfully loaded PDF: {filename}")
-            return image, [], f"Loaded {filename}", gr.update(visible=False)
+            print(f"DEBUG: Loading PDF viewer for {pdf_path}")
+            pdf_viewer = PDF(value=pdf_path, starting_page=1)
+            return pdf_viewer, [], f"Loaded {filename}", gr.update(visible=False)
         except Exception as e:
             print(f"ERROR: Failed to render PDF: {str(e)}")
             return None, [], f"Error rendering PDF: {str(e)}", gr.update(visible=False)
 
     except Exception as e:
         print(f"ERROR: Failed to handle PDF selection: {str(e)}")
+        return None, [], f"Error loading PDF: {str(e)}", gr.update(visible=False)
 
 
 def handle_new_upload(file, chunk_size, chunking_technique, session_state):
@@ -274,10 +275,10 @@ def handle_new_upload(file, chunk_size, chunking_technique, session_state):
     # Process the file using the app's backend
     app.process_pdf(file, chunk_size, chunking_technique)
 
-    # Render first page
-    image = render_first_page(file)
+    # Create PDF viewer
+    pdf_viewer = PDF(value=file.name, starting_page=1)
 
-    return image, [], session_state, gr.update(visible=False)
+    return pdf_viewer, [], session_state, gr.update(visible=False)
 
 
 def update_embedding_model(selected_embedding_model_provider):
@@ -420,7 +421,8 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
         # Right Half
         with gr.Column(scale=6):
-            show_img = gr.Image(label="Uploaded PDF")
+            #show_pdf = PDF(label="Uploaded PDF", height=600)
+            show_pdf = PDF(label="Uploaded PDF", height=600, elem_classes="pdf-parent")
 
             with gr.Row():
                 selected_embedding_model_provider = gr.Dropdown(
@@ -522,7 +524,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
         inputs=[
             chatbot,
             txt,
-            upload_btn,  # Changed from btn to upload_btn
+            upload_btn,
             use_semantic_cache,
             use_reranker,
             reranker_type,
@@ -545,7 +547,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
     pdf_list.select(
         fn=handle_pdf_selection,
         inputs=[pdf_list],
-        outputs=[show_img, chatbot, feedback_markdown, pdf_selector_modal],
+        outputs=[show_pdf, chatbot, feedback_markdown, pdf_selector_modal]
     )
 
     # First close the modal when user selects a file
@@ -553,14 +555,8 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
     upload_btn.upload(
         fn=render_first,
-        inputs=[
-            upload_btn,
-            chunk_size,
-            chunking_technique,
-            selected_embedding_model,
-            session_state,
-        ],
-        outputs=[show_img, chatbot, session_state],
+        inputs=[upload_btn, chunk_size, chunking_technique, selected_embedding_model, session_state],
+        outputs=[show_pdf, chatbot, session_state],
     ).success(
         fn=lambda: (gr.update(visible=False), format_pdf_list(app.search_pdfs())),
         outputs=[pdf_selector_modal, pdf_list],
@@ -569,7 +565,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
     reset_btn.click(
         fn=reset_app,
         inputs=None,
-        outputs=[chatbot, show_img, txt, feedback_markdown],
+        outputs=[chatbot, show_pdf, txt, feedback_markdown],
     )
 
     use_chat_history.change(
