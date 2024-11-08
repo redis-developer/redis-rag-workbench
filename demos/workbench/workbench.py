@@ -94,13 +94,13 @@ def show_history(session_state):
     return history, gr.update(visible=True)
 
 
-def render_first(file, chunk_size, chunking_technique, embedding_model, session_state):
+def render_first(file, chunk_size, chunking_technique, selected_embedding_model, session_state):
     """Handle initial PDF upload and rendering."""
     if not session_state:
         session_state = app.initialize_session()
 
     # First process and store the PDF properly
-    app.process_pdf(file, chunk_size, chunking_technique, embedding_model)
+    app.process_pdf(file, chunk_size, chunking_technique, selected_embedding_model)
 
     # Then render the first page
     image = render_first_page(file)
@@ -124,7 +124,7 @@ def get_response(
     distance_threshold,
     top_k,
     llm_model,
-    llm_model_provider,
+    selected_llm_provider,
     llm_temperature,
     use_chat_history,
     session_state,
@@ -140,9 +140,9 @@ def get_response(
         app.update_top_k(top_k)
     if app.distance_threshold != distance_threshold:
         app.update_distance_threshold(distance_threshold)
-    if app.selected_model != llm_model or app.llm_model_provider != llm_model_provider:
+    if app.selected_llm != llm_model or app.selected_llm_provider != selected_llm_provider:
         app.update_model(
-            llm_model, llm_model_provider
+            llm_model, selected_llm_provider
         )  # was this passing the old model?
     if app.llm_temperature != llm_temperature:
         app.update_temperature(llm_temperature)
@@ -280,10 +280,10 @@ def handle_new_upload(file, chunk_size, chunking_technique, session_state):
     return image, [], session_state, gr.update(visible=False)
 
 
-def update_embedding_model(embedding_model_provider):
+def update_embedding_model(selected_embedding_model_provider):
     """Update the embedding model based on the selected provider."""
-    app.update_embedding_model(embedding_model_provider)
-    return app.embedding_models[embedding_model_provider]
+    app.update_embedding_model(selected_embedding_model_provider)
+    return app.available_embedding_models[selected_embedding_model_provider]
 
 
 HEADER = """
@@ -296,18 +296,18 @@ HEADER = """
 """
 
 
-def update_embedding_model_options(embedding_model_provider, embedding_model):
+def update_embedding_model_options(selected_embedding_model_provider, selected_embedding_model):
     # gradio has a weird thing where you have to include the second variable even if it's unused https://stackoverflow.com/questions/76693922/what-am-i-doing-wrong-with-gradio-dropdown-how-to-dynamically-modify-the-choice
-    if app.embedding_model_provider != embedding_model_provider:
-        app.update_embedding_model_provider(embedding_model_provider)
-        models = app.embedding_models[embedding_model_provider]
+    if app.selected_embedding_model_provider != selected_embedding_model_provider:
+        app.update_embedding_model_provider(selected_embedding_model_provider)
+        models = app.available_embedding_models[selected_embedding_model_provider]
         return gr.Dropdown(choices=models, value=models[0])
 
 
-def update_llm_model_options(llm_model_provider, llm_model):
-    if app.llm_model_provider != llm_model_provider:
-        app.update_model(llm_model, llm_model_provider)
-        models = app.available_models[llm_model_provider]
+def update_llm_model_options(selected_llm_provider, llm_model):
+    if app.selected_llm_provider != selected_llm_provider:
+        app.update_model(llm_model, selected_llm_provider)
+        models = app.available_llms[selected_llm_provider]
         return gr.Dropdown(choices=models, value=models[0])
 
 
@@ -354,22 +354,22 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
             with gr.Row():
                 with gr.Row():
-                    llm_model_provider = gr.Dropdown(
+                    selected_llm_provider = gr.Dropdown(
                         choices=app.llm_model_providers,
-                        value=app.llm_model_provider,
+                        value=app.selected_llm_provider,
                         label="LLM Model Provider",
                         # interactive=True,
                     )
                     llm_model = gr.Dropdown(
-                        choices=app.available_models[llm_model_provider.value],
-                        value=app.selected_model,
+                        choices=app.available_llms[selected_llm_provider.value],
+                        value=app.selected_llm,
                         label="LLM Model",
                         # interactive=True,
                     )
 
-                    llm_model_provider.change(
+                    selected_llm_provider.change(
                         fn=update_llm_model_options,
-                        inputs=[llm_model_provider, llm_model],
+                        inputs=[selected_llm_provider, llm_model],
                         outputs=[llm_model],
                     )
 
@@ -383,7 +383,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
                     top_k = gr.Slider(
                         minimum=1,
-                        maximum=10,
+                        maximum=20,
                         value=app.top_k,
                         step=1,
                         label="Top K",
@@ -423,24 +423,24 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             show_img = gr.Image(label="Uploaded PDF")
 
             with gr.Row():
-                embedding_model_provider = gr.Dropdown(
+                selected_embedding_model_provider = gr.Dropdown(
                     choices=app.embedding_model_providers,
-                    value=app.embedding_model_provider,
+                    value=app.selected_embedding_model_provider,
                     label="Embedding Model Provider",
                     interactive=True,
                 )
 
-                embedding_model = gr.Dropdown(
-                    choices=app.embedding_models[embedding_model_provider.value],
-                    value=app.embedding_model,
+                selected_embedding_model = gr.Dropdown(
+                    choices=app.available_embedding_models[selected_embedding_model_provider.value],
+                    value=app.selected_embedding_model,
                     label="Embedding Model",
                     interactive=True,
                 )
 
-                embedding_model_provider.change(
+                selected_embedding_model_provider.change(
                     fn=update_embedding_model_options,
-                    inputs=[embedding_model_provider, embedding_model],
-                    outputs=[embedding_model],
+                    inputs=[selected_embedding_model_provider, selected_embedding_model],
+                    outputs=[selected_embedding_model],
                 )
 
             with gr.Row():
@@ -453,7 +453,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             with gr.Row():
                 chunk_size = gr.Slider(
                     minimum=100,
-                    maximum=1000,
+                    maximum=2500,
                     value=app.chunk_size,
                     step=50,
                     label="Chunk Size",
@@ -504,7 +504,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             distance_threshold,
             top_k,
             llm_model,
-            llm_model_provider,
+            selected_llm_provider,
             llm_temperature,
             use_chat_history,
             session_state,
@@ -529,7 +529,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             distance_threshold,
             top_k,
             llm_model,
-            llm_model_provider,
+            selected_llm_provider,
             llm_temperature,
             use_chat_history,
             session_state,
@@ -557,7 +557,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             upload_btn,
             chunk_size,
             chunking_technique,
-            embedding_model,
+            selected_embedding_model,
             session_state,
         ],
         outputs=[show_img, chatbot, session_state],

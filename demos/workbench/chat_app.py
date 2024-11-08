@@ -11,7 +11,6 @@ from langchain_openai import (
     AzureChatOpenAI,
     AzureOpenAIEmbeddings,
     ChatOpenAI,
-    OpenAI,
     OpenAIEmbeddings,
 )
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
@@ -42,14 +41,10 @@ class ChatApp:
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.cohere_api_key = os.environ.get("COHERE_API_KEY")
 
-        self.azure_domain = os.environ.get("AZURE_DOMAIN", "")  # ex: redis-azure-test
-        self.azure_llm_api_version = os.environ.get(
-            "AZURE_LLM_API_VERSION", ""
-        )  # ex: 2024-08-01-preview
-        self.azure_emb_api_version = os.environ.get(
-            "AZURE_EMB_API_VERSION", ""
-        )  # ex: 2024-08-01-preview
-        self.azure_api_key = os.environ.get("AZURE_API_KEY", "")  # ex: 1234567890abcdef
+        self.azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION")  # ex: 2024-08-01-preview
+        self.azure_openai_api_key = os.environ.get("AZURE_OPENAI_API_KEY")  # ex: 1234567890abcdef
+        self.azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+        self.azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
 
         required_vars = {
             "REDIS_URL": os.environ.get("REDIS_URL"),
@@ -76,30 +71,26 @@ class ChatApp:
         self.count = 0
         self.use_semantic_cache = False
         self.use_rerankers = False
-        self.top_k = 1
+        self.top_k = 3
         self.distance_threshold = 0.30
         self.llm_temperature = 0.7
         self.use_chat_history = False
 
-        self.available_models = {
+        self.available_llms = {
             "openai": sorted(openai_models()),
-            "azure-openai": ["gpt-35-turbo-16k"],
+            "azure-openai": [self.azure_openai_deployment],
         }
-        self.llm_model_provider = "openai"
-        self.llm_model_providers = ["openai", "azure-openai"]
-        self.selected_model = "gpt-3.5-turbo"
+        self.llm_model_providers = list(self.available_llms.keys())
+        self.selected_llm_provider = "openai"
+        self.selected_llm = "gpt-3.5-turbo"
 
-        self.embedding_model_providers = ["openai", "azure-openai"]
-        self.embedding_model_provider = "openai"
-
-        self.embedding_models = {
-            "openai": [
-                "gpt-3.5-turbo",
-                "gpt-3.5-turbo-ada",
-            ],  # TODO: figure out the embedding here
+        self.available_embedding_models = {
+            "openai": ["text-embedding-ada-002"],
             "azure-openai": ["text-embedding-ada-002"],
         }
-        self.embedding_model = None
+        self.embedding_model_providers = list(self.available_embedding_models.keys())
+        self.selected_embedding_model_provider = "openai"
+        self.selected_embedding_model = "text-embedding-ada-002"
 
         self.llm = None
         self.cached_llm = None
@@ -123,8 +114,6 @@ class ChatApp:
                 limit=3, api_config={"api_key": self.cohere_api_key}
             ),
         }
-
-        self.openai_client = OpenAI(api_key=self.openai_api_key)
 
         # Initialize chat history if use_chat_history is True
         if self.use_chat_history:
@@ -171,6 +160,48 @@ class ChatApp:
             self.initialize_components()
 
         return "Credentials updated successfully. You can now use the demo."
+
+    def get_llm(self):
+        """Get the right LLM based on settings and config."""
+        if self.selected_llm_provider == "azure-openai":
+            #api_endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{self.selected_llm}/chat/completions?api-version={self.azure_openai_api_version}"
+            try:
+                model = AzureChatOpenAI(
+                    azure_deployment=self.selected_llm,
+                    api_version=self.azure_openai_api_version,
+                    api_key=self.azure_openai_api_key,
+                    azure_endpoint=self.azure_openai_endpoint,
+                    temperature=self.llm_temperature,
+                    max_tokens=None,
+                    timeout=None,
+                    max_retries=2,
+                    # azure_endpoint=api_endpoint,
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
+                )
+        else:
+            model = ChatOpenAI(
+                model=self.selected_llm,
+                temperature=0,
+                # api_key=self.openai_api_key#os.environ.get("OPENAI_API_KEY"),
+            )
+
+        return model
+
+    def get_embedding_model(self):
+        """Get the right embedding model based on settings and config"""
+        if self.selected_embedding_model_provider == "azure-openai":
+            #api_endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{self.selected_embedding_model}/embeddings?api-version={self.azure_openai_api_version}"
+            return AzureOpenAIEmbeddings(
+                model=self.selected_embedding_model,
+                api_key=self.azure_openai_api_key,
+                api_version=self.azure_openai_api_version,
+                azure_endpoint=self.azure_openai_endpoint,
+            )
+        else:
+            return OpenAIEmbeddings(api_key=self.openai_api_key)
 
     def get_reranker_choices(self):
         if self.initialized:
@@ -257,36 +288,8 @@ class ChatApp:
             return "\n".join(formatted_history)
         return "No chat history available."
 
-    def get_llm(self, model_provider, model_name):
-        if model_provider == "azure-openai":
-            api_endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{model_name}/chat/completions?api-version={api_version}"
-
-            try:
-                model = AzureChatOpenAI(
-                    azure_deployment=model_name,  # or your deployment
-                    api_version=self.azure_llm_api_version,  # or your api version
-                    temperature=self.llm_temperature,
-                    max_tokens=None,
-                    timeout=None,
-                    max_retries=2,
-                    api_key=os.environ.get("AZURE_LLM_API_KEY"),
-                    azure_endpoint=api_endpoint,
-                )
-            except Exception as e:
-                raise ValueError(
-                    f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
-                )
-        else:
-            model = ChatOpenAI(
-                model=model_name,
-                temperature=0,
-                api_key=os.environ.get("OPENAI_API_KEY"),
-            )
-
-        return model
-
     def update_llm(self):
-        self.llm = self.get_llm(self.llm_model_provider, self.selected_model)
+        self.llm = self.get_llm()
 
         if self.use_semantic_cache:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
@@ -299,8 +302,8 @@ class ChatApp:
             self.chain = self.build_chain(self.vector_store)
 
     def update_model(self, new_model: str, new_model_provider: str):
-        self.selected_model = new_model
-        self.llm_model_provider = new_model_provider
+        self.selected_llm = new_model
+        self.selected_llm_provider = new_model_provider
         self.update_llm()
 
     def update_temperature(self, new_temperature: float):
@@ -407,22 +410,10 @@ class ChatApp:
             return {}
 
     def update_embedding_model_provider(self, new_provider: str):
-        self.embedding_model_provider = new_provider
-
-    def get_embedding_model(self):
-        if self.embedding_model_provider == "azure-openai":
-            endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{self.embedding_model}/embeddings?api-version={self.azure_emb_api_version}"
-            return AzureOpenAIEmbeddings(
-                model=self.embedding_model,
-                azure_endpoint=endpoint,
-                api_key=self.azure_api_key,
-                api_version=self.azure_emb_api_version,
-            )
-        else:
-            return OpenAIEmbeddings(api_key=self.openai_api_key)
+        self.selected_embedding_model_provider = new_provider
 
     def process_pdf(
-        self, file, chunk_size: int, chunking_technique: str, embedding_model: str
+        self, file, chunk_size: int, chunking_technique: str, selected_embedding_model: str
     ) -> Any:
         """Process a new PDF file upload."""
         try:
@@ -439,12 +430,10 @@ class ChatApp:
 
             # Set the index name from the PDF manager
             self.index_name = self.current_pdf_index
-            self.embedding_model = embedding_model
+            self.selected_embedding_model = selected_embedding_model
 
             # Create the vector store using the same index
             embeddings = self.get_embedding_model()
-
-            # embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
             self.vector_store = RedisVectorStore.from_documents(
                 documents,
                 embeddings,
@@ -476,7 +465,7 @@ class ChatApp:
             # TODO: the embedding model probably needs to get store in the index for the loading option
             embeddings = self.get_embedding_model()
             self.vector_store = RedisVectorStore(
-                embeddings,  # First positional argument
+                embeddings,
                 redis_url=self.redis_url,
                 index_name=self.current_pdf_index,
             )
