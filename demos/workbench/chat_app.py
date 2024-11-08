@@ -164,7 +164,6 @@ class ChatApp:
     def get_llm(self):
         """Get the right LLM based on settings and config."""
         if self.selected_llm_provider == "azure-openai":
-            #api_endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{self.selected_llm}/chat/completions?api-version={self.azure_openai_api_version}"
             try:
                 model = AzureChatOpenAI(
                     azure_deployment=self.selected_llm,
@@ -175,7 +174,6 @@ class ChatApp:
                     max_tokens=None,
                     timeout=None,
                     max_retries=2,
-                    # azure_endpoint=api_endpoint,
                 )
             except Exception as e:
                 raise ValueError(
@@ -193,7 +191,6 @@ class ChatApp:
     def get_embedding_model(self):
         """Get the right embedding model based on settings and config"""
         if self.selected_embedding_model_provider == "azure-openai":
-            #api_endpoint = f"https://{self.azure_domain}.openai.azure.com/openai/deployments/{self.selected_embedding_model}/embeddings?api-version={self.azure_openai_api_version}"
             return AzureOpenAIEmbeddings(
                 model=self.selected_embedding_model,
                 api_key=self.azure_openai_api_key,
