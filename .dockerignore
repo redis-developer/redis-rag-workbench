@@ -1,0 +1,11 @@
+.git
+__pycache__
+.vscode
+.env
+.env-example
+.env.*
+.gitignore
+Dockerfile
+LICENSE
+README.md
+docker-compose.yml
