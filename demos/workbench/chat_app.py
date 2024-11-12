@@ -89,8 +89,8 @@ class ChatApp:
         self.selected_llm = "gpt-3.5-turbo"
 
         self.available_embedding_models = {
-            "openai": ["text-embedding-ada-002"],
-            "azure-openai": ["text-embedding-ada-002"],
+            "openai": ["text-embedding-ada-002", "text-embedding-3-small"],
+            "azure-openai": ["text-embedding-ada-002", "text-embedding-3-small"],
         }
         self.embedding_model_providers = list(self.available_embedding_models.keys())
         self.selected_embedding_model_provider = "openai"
@@ -121,7 +121,7 @@ class ChatApp:
         }
 
         # Init semantic router
-        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml")
+        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml", overwrite=True)
 
         # Init chat history if use_chat_history is True
         if self.use_chat_history:
@@ -211,12 +211,6 @@ class ChatApp:
         if self.initialized:
             return list(self.RERANKERS.keys())
         return ["HuggingFace", "Cohere"]  # Default choices before initialization
-
-    def ensure_index_created(self):
-        try:
-            self.llmcache._index.info()
-        except:
-            self.llmcache._index.create()
 
     def __call__(self, file: str, chunk_size: int, chunking_technique: str) -> Any:
         """Process a file upload directly - used by the UI."""
@@ -323,24 +317,21 @@ class ChatApp:
 
     def update_top_k(self, new_top_k: int):
         self.top_k = new_top_k
+    
+    def make_semantic_cache(self) -> SemanticCache:
+        semantic_cache_index_name = f"llmcache:{self.index_name}"
+        return SemanticCache(
+            name=semantic_cache_index_name,
+            redis_url=self.redis_url,
+            distance_threshold=self.distance_threshold,
+        )
 
     def update_semantic_cache(self, use_semantic_cache: bool):
         self.use_semantic_cache = use_semantic_cache
         if self.use_semantic_cache and self.index_name:
-            semantic_cache_index_name = f"llmcache:{self.index_name}"
-            self.llmcache = SemanticCache(
-                name=semantic_cache_index_name,
-                redis_url=self.redis_url,
-                distance_threshold=self.distance_threshold,
-            )
-
-            # Ensure the index is created
-            try:
-                self.llmcache._index.info()
-            except ResponseError:
-                self.llmcache._index.create()
-
+            self.llmcache = self.make_semantic_cache()
             self.update_llm()
+
             if self.vector_store:
                 self.chain = self.build_chain(self.vector_store)
         else:
@@ -349,12 +340,7 @@ class ChatApp:
     def update_distance_threshold(self, new_threshold: float):
         self.distance_threshold = new_threshold
         if self.index_name:
-            self.llmcache = SemanticCache(
-                name=f"llmcache:{self.index_name}",
-                redis_url=self.redis_url,
-                distance_threshold=self.distance_threshold,
-            )
-            self.ensure_index_created()
+            self.llmcache = self.make_semantic_cache()
             self.update_llm()
 
     def get_last_cache_status(self) -> bool:
