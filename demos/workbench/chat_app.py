@@ -18,6 +18,7 @@ from ragas import evaluate
 from ragas.metrics import answer_relevancy, faithfulness
 from redis.exceptions import ResponseError
 from redisvl.extensions.llmcache import SemanticCache
+from redisvl.extensions.router import SemanticRouter
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 from ulid import ULID
 
@@ -75,6 +76,8 @@ class ChatApp:
         self.distance_threshold = 0.30
         self.llm_temperature = 0.7
         self.use_chat_history = False
+        self.use_semantic_router = False
+        self.use_ragas = False
 
         self.available_llms = {
             "openai": sorted(openai_models()),
@@ -115,19 +118,22 @@ class ChatApp:
             ),
         }
 
-        # Initialize chat history if use_chat_history is True
+        # Init semantic router
+        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml")
+
+        # Init chat history if use_chat_history is True
         if self.use_chat_history:
             self.chat_history = RedisChatMessageHistory(
                 session_id=self.session_id, redis_url=self.redis_url
             )
         else:
             self.chat_history = None
-
-        self.initialized = True
-
+        
+        # Init LLM
         self.update_llm()
-
+    
         self.initialized = True
+
 
     def initialize_session(self):
         self.session_id = str(ULID())
@@ -183,7 +189,6 @@ class ChatApp:
             model = ChatOpenAI(
                 model=self.selected_llm,
                 temperature=0,
-                # api_key=self.openai_api_key#os.environ.get("OPENAI_API_KEY"),
             )
 
         return model
@@ -284,7 +289,13 @@ class ChatApp:
                     formatted_history.append(f"🤖 **AI**: {msg.content}\n")
             return "\n".join(formatted_history)
         return "No chat history available."
-
+    
+    def update_semantic_router(self, use_semantic_router: bool):
+        self.use_semantic_router = use_semantic_router
+    
+    def update_ragas(self, use_ragas: bool):
+        self.use_ragas = use_ragas
+    
     def update_llm(self):
         self.llm = self.get_llm()
 
