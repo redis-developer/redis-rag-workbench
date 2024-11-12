@@ -3,8 +3,23 @@ services:
   redis:
     image: "redis/redis-stack:edge"
     ports:
-      - "6379:6379"
+      - 6002:6379
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
+  app:
+    container_name: app
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    ports:
+      - 8000:8000
+    env_file:
+      - ./.env
+      - ./.env.docker
+    volumes:
+      - ./:/app
+    restart: always
+    depends_on:
+      - redis
