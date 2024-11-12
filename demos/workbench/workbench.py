@@ -3,10 +3,10 @@ from datetime import datetime
 
 import gradio as gr
 from gradio_modal import Modal
+from gradio_pdf import PDF
 from langchain_community.callbacks import get_openai_callback
 
 from demos.workbench.chat_app import ChatApp, generate_feedback
-from shared_components.pdf_utils import render_first_page
 from shared_components.theme_management import load_theme
 
 # app to be used in the gradio app
@@ -22,11 +22,42 @@ def path():
 def app_title():
     return "Chat with one PDF"
 
-TAG_ESCAPE_CHARS = {',', '.', '<', '>', '{', '}', '[', ']', '"', "'", ':', ';', '!', '@',
-                    '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=', '~', '|', '/'}
+
+TAG_ESCAPE_CHARS = {
+    ",",
+    ".",
+    "<",
+    ">",
+    "{",
+    "}",
+    "[",
+    "]",
+    '"',
+    "'",
+    ":",
+    ";",
+    "!",
+    "@",
+    "#",
+    "$",
+    "%",
+    "^",
+    "&",
+    "*",
+    "(",
+    ")",
+    "-",
+    "+",
+    "=",
+    "~",
+    "|",
+    "/",
+}
+
 
 def escape_redis_search_query(query: str) -> str:
-    return ''.join(f"\\{char}" if char in TAG_ESCAPE_CHARS else char for char in query)
+    return "".join(f"\\{char}" if char in TAG_ESCAPE_CHARS else char for char in query)
+
 
 # gradio functions define what happens with certain UI elements
 def add_text(history, text: str):
@@ -63,18 +94,18 @@ def show_history(session_state):
     return history, gr.update(visible=True)
 
 
-def render_first(file, chunk_size, chunking_technique, session_state):
+def render_first(file, chunk_size, chunking_technique, selected_embedding_model, session_state):
     """Handle initial PDF upload and rendering."""
     if not session_state:
         session_state = app.initialize_session()
 
     # First process and store the PDF properly
-    app.process_pdf(file, chunk_size, chunking_technique)
+    app.process_pdf(file, chunk_size, chunking_technique, selected_embedding_model)
 
-    # Then render the first page
-    image = render_first_page(file)
+    # Create PDF viewer
+    pdf_viewer = PDF(value=file.name, starting_page=1)
 
-    return image, [], session_state
+    return pdf_viewer, [], session_state
 
 
 def perform_ragas_evaluation(query, result):
@@ -93,6 +124,7 @@ def get_response(
     distance_threshold,
     top_k,
     llm_model,
+    selected_llm_provider,
     llm_temperature,
     use_chat_history,
     session_state,
@@ -103,12 +135,15 @@ def get_response(
         raise gr.Error(message="Please upload or select a PDF first")
 
     # Update parameters if changed
+    # TODO: maybe change the naming convention of selected because it seems backwards to me
     if app.top_k != top_k:
         app.update_top_k(top_k)
     if app.distance_threshold != distance_threshold:
         app.update_distance_threshold(distance_threshold)
-    if app.selected_model != llm_model:
-        app.update_model(llm_model)
+    if app.selected_llm != llm_model or app.selected_llm_provider != selected_llm_provider:
+        app.update_model(
+            llm_model, selected_llm_provider
+        )  # was this passing the old model?
     if app.llm_temperature != llm_temperature:
         app.update_temperature(llm_temperature)
 
@@ -164,19 +199,25 @@ def get_response(
         # Yield one last time to update with RAGAS evaluation results
         yield history, "", final_output, session_state
 
+
 def format_pdf_list(pdfs):
     """Format PDFs for display in the dataframe."""
-    return [[
-        pdf.filename,
-        pdf.file_size,
-        datetime.fromisoformat(pdf.upload_date).strftime("%Y-%m-%d %H:%M")
-    ] for pdf in pdfs]
+    return [
+        [
+            pdf.filename,
+            pdf.file_size,
+            datetime.fromisoformat(pdf.upload_date).strftime("%Y-%m-%d %H:%M"),
+        ]
+        for pdf in pdfs
+    ]
+
 
 # UI event handlers
 def update_pdf_list(search_query=""):
     """Update the PDF list based on search query."""
     pdfs = app.search_pdfs(f"*{search_query}*" if search_query else "*")
     return format_pdf_list(pdfs)
+
 
 def handle_pdf_selection(evt: gr.SelectData, pdf_list):
     """Handle PDF selection from the list."""
@@ -214,15 +255,17 @@ def handle_pdf_selection(evt: gr.SelectData, pdf_list):
         # Render the first page for display
         print(f"DEBUG: Rendering first page of {pdf_path}")
         try:
-            image = render_first_page(pdf_path)
-            print(f"DEBUG: Successfully loaded PDF: {filename}")
-            return image, [], f"Loaded {filename}", gr.update(visible=False)
+            print(f"DEBUG: Loading PDF viewer for {pdf_path}")
+            pdf_viewer = PDF(value=pdf_path, starting_page=1)
+            return pdf_viewer, [], f"Loaded {filename}", gr.update(visible=False)
         except Exception as e:
             print(f"ERROR: Failed to render PDF: {str(e)}")
             return None, [], f"Error rendering PDF: {str(e)}", gr.update(visible=False)
 
     except Exception as e:
         print(f"ERROR: Failed to handle PDF selection: {str(e)}")
+        return None, [], f"Error loading PDF: {str(e)}", gr.update(visible=False)
+
 
 def handle_new_upload(file, chunk_size, chunking_technique, session_state):
     """Handle new PDF upload."""
@@ -232,10 +275,42 @@ def handle_new_upload(file, chunk_size, chunking_technique, session_state):
     # Process the file using the app's backend
     app.process_pdf(file, chunk_size, chunking_technique)
 
-    # Render first page
-    image = render_first_page(file)
+    # Create PDF viewer
+    pdf_viewer = PDF(value=file.name, starting_page=1)
 
-    return image, [], session_state, gr.update(visible=False)
+    return pdf_viewer, [], session_state, gr.update(visible=False)
+
+
+def update_embedding_model(selected_embedding_model_provider):
+    """Update the embedding model based on the selected provider."""
+    app.update_embedding_model(selected_embedding_model_provider)
+    return app.available_embedding_models[selected_embedding_model_provider]
+
+
+HEADER = """
+<div style="display: flex; justify-content: center;">
+    <img src="../assets/redis-logo.svg" style="height: 2rem">
+</div>
+<div style="text-align: center">
+    <h1>RAG Workbench</h1>
+</div>
+"""
+
+
+def update_embedding_model_options(selected_embedding_model_provider, selected_embedding_model):
+    # gradio has a weird thing where you have to include the second variable even if it's unused https://stackoverflow.com/questions/76693922/what-am-i-doing-wrong-with-gradio-dropdown-how-to-dynamically-modify-the-choice
+    if app.selected_embedding_model_provider != selected_embedding_model_provider:
+        app.update_embedding_model_provider(selected_embedding_model_provider)
+        models = app.available_embedding_models[selected_embedding_model_provider]
+        return gr.Dropdown(choices=models, value=models[0])
+
+
+def update_llm_model_options(selected_llm_provider, llm_model):
+    if app.selected_llm_provider != selected_llm_provider:
+        app.update_model(llm_model, selected_llm_provider)
+        models = app.available_llms[selected_llm_provider]
+        return gr.Dropdown(choices=models, value=models[0])
+
 
 HEADER = """
 <div style="display: flex; justify-content: center;">
@@ -254,7 +329,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
     with Modal(visible=False) as credentials_modal:
         gr.Markdown("## Enter Missing Credentials")
         redis_url_input = gr.Textbox(
-            label="REDIS_URL", type="password", value=app.redis_url or "redis://localhost:6379"
+            label="REDIS_URL",
+            type="password",
+            value=app.redis_url or "redis://localhost:6379",
         )
         openai_key_input = gr.Textbox(
             label="OPENAI_API_KEY", type="password", value=app.openai_api_key or ""
@@ -287,12 +364,25 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
             with gr.Row():
                 with gr.Row():
-                    llm_model = gr.Dropdown(
-                        choices=app.available_models,
-                        value=app.selected_model,
-                        label="LLM Model",
-                        interactive=True,
+                    selected_llm_provider = gr.Dropdown(
+                        choices=app.llm_model_providers,
+                        value=app.selected_llm_provider,
+                        label="LLM Model Provider",
+                        # interactive=True,
                     )
+                    llm_model = gr.Dropdown(
+                        choices=app.available_llms[selected_llm_provider.value],
+                        value=app.selected_llm,
+                        label="LLM Model",
+                        # interactive=True,
+                    )
+
+                    selected_llm_provider.change(
+                        fn=update_llm_model_options,
+                        inputs=[selected_llm_provider, llm_model],
+                        outputs=[llm_model],
+                    )
+
                     llm_temperature = gr.Slider(
                         minimum=0,
                         maximum=1,
@@ -300,9 +390,10 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                         step=0.1,
                         label="LLM Temperature",
                     )
+
                     top_k = gr.Slider(
                         minimum=1,
-                        maximum=10,
+                        maximum=20,
                         value=app.top_k,
                         step=1,
                         label="Top K",
@@ -339,7 +430,29 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
         # Right Half
         with gr.Column(scale=6):
-            show_img = gr.Image(label="Uploaded PDF")
+            #show_pdf = PDF(label="Uploaded PDF", height=600)
+            show_pdf = PDF(label="Uploaded PDF", height=600, elem_classes="pdf-parent")
+
+            with gr.Row():
+                selected_embedding_model_provider = gr.Dropdown(
+                    choices=app.embedding_model_providers,
+                    value=app.selected_embedding_model_provider,
+                    label="Embedding Model Provider",
+                    interactive=True,
+                )
+
+                selected_embedding_model = gr.Dropdown(
+                    choices=app.available_embedding_models[selected_embedding_model_provider.value],
+                    value=app.selected_embedding_model,
+                    label="Embedding Model",
+                    interactive=True,
+                )
+
+                selected_embedding_model_provider.change(
+                    fn=update_embedding_model_options,
+                    inputs=[selected_embedding_model_provider, selected_embedding_model],
+                    outputs=[selected_embedding_model],
+                )
 
             with gr.Row():
                 chunking_technique = gr.Radio(
@@ -351,7 +464,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             with gr.Row():
                 chunk_size = gr.Slider(
                     minimum=100,
-                    maximum=1000,
+                    maximum=2500,
                     value=app.chunk_size,
                     step=50,
                     label="Chunk Size",
@@ -377,14 +490,12 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                 col_count=(3, "fixed"),
                 interactive=False,
                 wrap=True,
-                show_label=False
+                show_label=False,
             )
 
         with gr.Row():
             upload_btn = gr.UploadButton(
-                "📁 Upload New PDF",
-                file_types=[".pdf"],
-                elem_id="upload-pdf-btn"
+                "📁 Upload New PDF", file_types=[".pdf"], elem_id="upload-pdf-btn"
             )
 
     txt.submit(
@@ -404,6 +515,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             distance_threshold,
             top_k,
             llm_model,
+            selected_llm_provider,
             llm_temperature,
             use_chat_history,
             session_state,
@@ -421,13 +533,14 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
         inputs=[
             chatbot,
             txt,
-            upload_btn,  # Changed from btn to upload_btn
+            upload_btn,
             use_semantic_cache,
             use_reranker,
             reranker_type,
             distance_threshold,
             top_k,
             llm_model,
+            selected_llm_provider,
             llm_temperature,
             use_chat_history,
             session_state,
@@ -437,34 +550,31 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
     select_pdf_btn.click(
         fn=lambda: (gr.update(visible=True), format_pdf_list(app.search_pdfs())),
-        outputs=[pdf_selector_modal, pdf_list]
+        outputs=[pdf_selector_modal, pdf_list],
     )
 
     pdf_list.select(
         fn=handle_pdf_selection,
         inputs=[pdf_list],
-        outputs=[show_img, chatbot, feedback_markdown, pdf_selector_modal]
+        outputs=[show_pdf, chatbot, feedback_markdown, pdf_selector_modal]
     )
 
     # First close the modal when user selects a file
-    upload_btn.click(
-        fn=lambda: gr.update(visible=False),
-        outputs=pdf_selector_modal
-    )
+    upload_btn.click(fn=lambda: gr.update(visible=False), outputs=pdf_selector_modal)
 
     upload_btn.upload(
         fn=render_first,
-        inputs=[upload_btn, chunk_size, chunking_technique, session_state],
-        outputs=[show_img, chatbot, session_state],
+        inputs=[upload_btn, chunk_size, chunking_technique, selected_embedding_model, session_state],
+        outputs=[show_pdf, chatbot, session_state],
     ).success(
         fn=lambda: (gr.update(visible=False), format_pdf_list(app.search_pdfs())),
-        outputs=[pdf_selector_modal, pdf_list]
+        outputs=[pdf_selector_modal, pdf_list],
     )
 
     reset_btn.click(
         fn=reset_app,
         inputs=None,
-        outputs=[chatbot, show_img, txt, feedback_markdown],
+        outputs=[chatbot, show_pdf, txt, feedback_markdown],
     )
 
     use_chat_history.change(

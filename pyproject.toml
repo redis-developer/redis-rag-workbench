@@ -30,6 +30,7 @@ langchain-experimental = "^0.0.62"
 gradio-modal = "^0.0.3"
 python-ulid = "^2.7.0"
 pandas = "^2.1.3"
+gradio-pdf = "^0.0.17"
 
 
 [build-system]

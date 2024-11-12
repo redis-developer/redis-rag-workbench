@@ -355,6 +355,7 @@ Temporary Items
 pyvenv.cfg
 .venv
 pip-selfcheck.json
+azure_test.ipynb
 
 # configuration file
 config.yaml

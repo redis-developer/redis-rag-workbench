@@ -6,6 +6,7 @@ from langchain_experimental.text_splitter import SemanticChunker
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_openai import OpenAIEmbeddings
 from PIL import Image
+from gradio_pdf import PDF
 
 
 def process_file(file, chunk_size: int, chunking_technique: str):
@@ -47,28 +48,6 @@ def render_file(file: str, page_num: int = 0) -> Image.Image:
     image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
     return image
 
-
-def render_first_page(file) -> Image.Image:
-    """Render the first page of a PDF.
-
-    Args:
-        file: Either a file object (from upload) or a path to a PDF file
-    """
-    try:
-        # Check if we got a path or a file object
-        if isinstance(file, str):
-            file_path = file
-        else:
-            file_path = file.name
-
-        print(f"DEBUG: Opening PDF from: {file_path}")
-        doc = fitz.open(file_path)
-        page = doc[0]
-        # Render the page as a PNG image with a resolution of 300 DPI
-        pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72))
-        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        doc.close()  # Make sure to close the document
-        return image
-    except Exception as e:
-        print(f"ERROR: Failed to render PDF page: {str(e)}")
-        raise
+def setup_pdf_viewer(file_path: str, starting_page: int = 1) -> PDF:
+    """Create a PDF viewer component for the given file."""
+    return PDF(value=file_path, starting_page=starting_page)
