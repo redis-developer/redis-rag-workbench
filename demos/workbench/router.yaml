@@ -26,4 +26,4 @@ vectorizer:
 routing_config:
   distance_threshold: 0.3
   max_k: 2
-  aggregation_method: avg
+  aggregation_method: min
