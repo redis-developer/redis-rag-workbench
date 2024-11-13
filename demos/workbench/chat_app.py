@@ -121,7 +121,7 @@ class ChatApp:
         }
 
         # Init semantic router
-        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml", overwrite=True)
+        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True)
 
         # Init chat history if use_chat_history is True
         if self.use_chat_history:
