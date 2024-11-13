@@ -1,5 +1,6 @@
 .git
 __pycache__
+.venv
 .vscode
 .env
 .env-example
