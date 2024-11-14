@@ -130,10 +130,10 @@ class ChatApp:
             )
         else:
             self.chat_history = None
-        
+
         # Init LLM
         self.update_llm()
-    
+
         self.initialized = True
 
 
@@ -285,13 +285,13 @@ class ChatApp:
                     formatted_history.append(f"🤖 **AI**: {msg.content}\n")
             return "\n".join(formatted_history)
         return "No chat history available."
-    
+
     def update_semantic_router(self, use_semantic_router: bool):
         self.use_semantic_router = use_semantic_router
-    
+
     def update_ragas(self, use_ragas: bool):
         self.use_ragas = use_ragas
-    
+
     def update_llm(self):
         self.llm = self.get_llm()
         self.evalutor_llm = LangchainLLMWrapper(self.llm)
@@ -317,7 +317,7 @@ class ChatApp:
 
     def update_top_k(self, new_top_k: int):
         self.top_k = new_top_k
-    
+
     def make_semantic_cache(self) -> SemanticCache:
         semantic_cache_index_name = f"llmcache:{self.index_name}"
         return SemanticCache(
@@ -330,12 +330,10 @@ class ChatApp:
         self.use_semantic_cache = use_semantic_cache
         if self.use_semantic_cache and self.index_name:
             self.llmcache = self.make_semantic_cache()
-            self.update_llm()
-
-            if self.vector_store:
-                self.chain = self.build_chain(self.vector_store)
         else:
             self.llmcache = None
+
+        self.update_llm()
 
     def update_distance_threshold(self, new_threshold: float):
         self.distance_threshold = new_threshold
