@@ -70,7 +70,25 @@ def add_text(history, text: str):
 def reset_app():
     app.chat_history = []
     app.N = 0
-    return [], None, "", gr.update(visible=False)
+
+    app.current_pdf_index = None
+    app.index_name = None
+    app.chunk_size = 500
+    app.chunking_technique = "Recursive Character"
+    app.chain = None
+    app.chat_history = None
+    app.N = 0
+    app.count = 0
+    app.use_semantic_cache = False
+    app.use_rerankers = False
+    app.top_k = 3
+    app.distance_threshold = 0.30
+    app.llm_temperature = 0.7
+    app.use_chat_history = False
+    app.use_semantic_router = False
+    app.use_ragas = False
+
+    return [], None, "", gr.update(visible=True, value="")
 
 
 # Connect the show_history_btn to the display_chat_history function and show the modal
@@ -422,7 +440,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                     step=0.01,
                     label="Distance Threshold",
                 )
-            
+
 
 
         # Right Half

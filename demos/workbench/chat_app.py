@@ -457,6 +457,7 @@ class ChatApp:
 
             # Set the current state
             self.current_pdf_index = index_name
+            self.index_name = index_name
             self.chunk_size = metadata.chunk_size
             self.chunking_technique = metadata.chunking_technique
 
