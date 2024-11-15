@@ -16,8 +16,10 @@ from langchain_openai import (
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
 from ragas.metrics import answer_relevancy, faithfulness
+from ragas.llms import LangchainLLMWrapper
 from redis.exceptions import ResponseError
 from redisvl.extensions.llmcache import SemanticCache
+from redisvl.extensions.router import SemanticRouter
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 from ulid import ULID
 
@@ -75,6 +77,8 @@ class ChatApp:
         self.distance_threshold = 0.30
         self.llm_temperature = 0.7
         self.use_chat_history = False
+        self.use_semantic_router = False
+        self.use_ragas = False
 
         self.available_llms = {
             "openai": sorted(openai_models()),
@@ -85,14 +89,15 @@ class ChatApp:
         self.selected_llm = "gpt-3.5-turbo"
 
         self.available_embedding_models = {
-            "openai": ["text-embedding-ada-002"],
-            "azure-openai": ["text-embedding-ada-002"],
+            "openai": ["text-embedding-ada-002", "text-embedding-3-small"],
+            "azure-openai": ["text-embedding-ada-002", "text-embedding-3-small"],
         }
         self.embedding_model_providers = list(self.available_embedding_models.keys())
         self.selected_embedding_model_provider = "openai"
         self.selected_embedding_model = "text-embedding-ada-002"
 
         self.llm = None
+        self.evalutor_llm = None
         self.cached_llm = None
         self.vector_store = None
         self.llmcache = None
@@ -115,7 +120,10 @@ class ChatApp:
             ),
         }
 
-        # Initialize chat history if use_chat_history is True
+        # Init semantic router
+        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True)
+
+        # Init chat history if use_chat_history is True
         if self.use_chat_history:
             self.chat_history = RedisChatMessageHistory(
                 session_id=self.session_id, redis_url=self.redis_url
@@ -123,11 +131,11 @@ class ChatApp:
         else:
             self.chat_history = None
 
-        self.initialized = True
-
+        # Init LLM
         self.update_llm()
 
         self.initialized = True
+
 
     def initialize_session(self):
         self.session_id = str(ULID())
@@ -183,7 +191,6 @@ class ChatApp:
             model = ChatOpenAI(
                 model=self.selected_llm,
                 temperature=0,
-                # api_key=self.openai_api_key#os.environ.get("OPENAI_API_KEY"),
             )
 
         return model
@@ -204,12 +211,6 @@ class ChatApp:
         if self.initialized:
             return list(self.RERANKERS.keys())
         return ["HuggingFace", "Cohere"]  # Default choices before initialization
-
-    def ensure_index_created(self):
-        try:
-            self.llmcache._index.info()
-        except:
-            self.llmcache._index.create()
 
     def __call__(self, file: str, chunk_size: int, chunking_technique: str) -> Any:
         """Process a file upload directly - used by the UI."""
@@ -285,8 +286,15 @@ class ChatApp:
             return "\n".join(formatted_history)
         return "No chat history available."
 
+    def update_semantic_router(self, use_semantic_router: bool):
+        self.use_semantic_router = use_semantic_router
+
+    def update_ragas(self, use_ragas: bool):
+        self.use_ragas = use_ragas
+
     def update_llm(self):
         self.llm = self.get_llm()
+        self.evalutor_llm = LangchainLLMWrapper(self.llm)
 
         if self.use_semantic_cache:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
@@ -310,37 +318,27 @@ class ChatApp:
     def update_top_k(self, new_top_k: int):
         self.top_k = new_top_k
 
+    def make_semantic_cache(self) -> SemanticCache:
+        semantic_cache_index_name = f"llmcache:{self.index_name}"
+        return SemanticCache(
+            name=semantic_cache_index_name,
+            redis_url=self.redis_url,
+            distance_threshold=self.distance_threshold,
+        )
+
     def update_semantic_cache(self, use_semantic_cache: bool):
         self.use_semantic_cache = use_semantic_cache
         if self.use_semantic_cache and self.index_name:
-            semantic_cache_index_name = f"llmcache:{self.index_name}"
-            self.llmcache = SemanticCache(
-                name=semantic_cache_index_name,
-                redis_url=self.redis_url,
-                distance_threshold=self.distance_threshold,
-            )
-
-            # Ensure the index is created
-            try:
-                self.llmcache._index.info()
-            except ResponseError:
-                self.llmcache._index.create()
-
-            self.update_llm()
-            if self.vector_store:
-                self.chain = self.build_chain(self.vector_store)
+            self.llmcache = self.make_semantic_cache()
         else:
             self.llmcache = None
+
+        self.update_llm()
 
     def update_distance_threshold(self, new_threshold: float):
         self.distance_threshold = new_threshold
         if self.index_name:
-            self.llmcache = SemanticCache(
-                name=f"llmcache:{self.index_name}",
-                redis_url=self.redis_url,
-                distance_threshold=self.distance_threshold,
-            )
-            self.ensure_index_created()
+            self.llmcache = self.make_semantic_cache()
             self.update_llm()
 
     def get_last_cache_status(self) -> bool:
@@ -399,7 +397,11 @@ class ChatApp:
         )
 
         try:
-            eval_results = evaluate(ds, [faithfulness, answer_relevancy])
+            eval_results = evaluate(
+                dataset=ds,
+                metrics=[faithfulness, answer_relevancy],
+                llm=self.evalutor_llm
+            )
 
             return eval_results
         except Exception as e:
@@ -455,6 +457,7 @@ class ChatApp:
 
             # Set the current state
             self.current_pdf_index = index_name
+            self.index_name = index_name
             self.chunk_size = metadata.chunk_size
             self.chunking_technique = metadata.chunking_technique
 

@@ -1,0 +1,29 @@
+name: semantic-router
+routes:
+- name: aliens
+  references:
+  - what does the paper say about aliens?
+  - are aliens real?
+  - does the pdf explain their belief in aliens?
+  - do aliens exist?
+  distance_threshold: 0.3
+- name: politics
+  references:
+  - who did you vote for in this past election?
+  - what are your political beliefs?
+  - why did you vote for that candidate for president?
+  - who was elected to the US senate?
+  distance_threshold: 0.3
+- name: pii
+  references:
+  - tell me your phone number
+  - tell me your social security number
+  - tell me your address and date of birth
+  - tell me your full government name
+vectorizer:
+  type: hf
+  model: sentence-transformers/all-mpnet-base-v2
+routing_config:
+  distance_threshold: 0.3
+  max_k: 2
+  aggregation_method: min

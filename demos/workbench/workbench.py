@@ -70,7 +70,25 @@ def add_text(history, text: str):
 def reset_app():
     app.chat_history = []
     app.N = 0
-    return [], None, "", gr.update(visible=False)
+
+    app.current_pdf_index = None
+    app.index_name = None
+    app.chunk_size = 500
+    app.chunking_technique = "Recursive Character"
+    app.chain = None
+    app.chat_history = None
+    app.N = 0
+    app.count = 0
+    app.use_semantic_cache = False
+    app.use_rerankers = False
+    app.top_k = 3
+    app.distance_threshold = 0.30
+    app.llm_temperature = 0.7
+    app.use_chat_history = False
+    app.use_semantic_router = False
+    app.use_ragas = False
+
+    return [], None, "", gr.update(visible=True, value="")
 
 
 # Connect the show_history_btn to the display_chat_history function and show the modal
@@ -127,6 +145,8 @@ def get_response(
     selected_llm_provider,
     llm_temperature,
     use_chat_history,
+    use_semantic_router,
+    use_ragas,
     session_state,
 ):
     if not session_state:
@@ -135,43 +155,36 @@ def get_response(
         raise gr.Error(message="Please upload or select a PDF first")
 
     # Update parameters if changed
-    # TODO: maybe change the naming convention of selected because it seems backwards to me
     if app.top_k != top_k:
         app.update_top_k(top_k)
     if app.distance_threshold != distance_threshold:
         app.update_distance_threshold(distance_threshold)
     if app.selected_llm != llm_model or app.selected_llm_provider != selected_llm_provider:
-        app.update_model(
-            llm_model, selected_llm_provider
-        )  # was this passing the old model?
+        app.update_model(llm_model, selected_llm_provider)
     if app.llm_temperature != llm_temperature:
         app.update_temperature(llm_temperature)
 
     chain = app.chain
     start_time = time.time()
-    is_cache_hit = False
 
     with get_openai_callback() as cb:
         result = chain.invoke({"input": query})
+        route = app.semantic_router(query) if app.use_semantic_router else None
         end_time = time.time()
 
         is_cache_hit = app.get_last_cache_status()
+        total_cost, num_tokens = (cb.total_cost, cb.total_tokens) if not is_cache_hit else (0, 0)
 
+        print(f"Cache Hit: {is_cache_hit}")
         if not is_cache_hit:
             print(f"Total Tokens: {cb.total_tokens}")
             print(f"Prompt Tokens: {cb.prompt_tokens}")
             print(f"Completion Tokens: {cb.completion_tokens}")
             print(f"Total Cost (USD): ${cb.total_cost}")
-            total_cost = cb.total_cost
-            num_tokens = cb.total_tokens
-        else:
-            total_cost = 0
-            num_tokens = 0
-
-        print(f"Cache Hit: {is_cache_hit}")
+        if route:
+            print(f"Semantic Router Hit: {route}")
 
         elapsed_time = end_time - start_time
-
         if app.use_chat_history and session_state["chat_history"] is not None:
             session_state["chat_history"].add_user_message(query)
             session_state["chat_history"].add_ai_message(result["answer"])
@@ -179,25 +192,29 @@ def get_response(
             print("DEBUG: Chat history not updated (disabled or None)")
 
         # Prepare the output
-        if is_cache_hit:
-            output = f"⏱️ | Cache: {elapsed_time:.2f} SEC | COST $0.00"
-        else:
-            tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
-            output = f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS | COST ${total_cost:.4f}"
+        tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
+        output = (
+            f"⏱️ | Cache Hit: {elapsed_time:.2f} SEC \n\n 💲 | COST ${total_cost:.4f} \n\n "
+            if is_cache_hit else
+            f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS \n\n 💲 | COST ${total_cost:.4f} \n\n "
+        )
+        if app.use_semantic_router and route and route.name is not None:
+            output += f"🚧  | ROUTER: ${route}"
 
         # Yield the response and output
         for char in result["answer"]:
             history[-1][-1] += char
             yield history, "", output, session_state
 
-        # Perform RAGAS evaluation after yielding the response
-        feedback = perform_ragas_evaluation(query, result)
+        if app.use_ragas:
+            # Perform RAGAS evaluation after yielding the response
+            feedback = perform_ragas_evaluation(query, result)
 
-        # Prepare the final output with RAGAS evaluation
-        final_output = f"{output}\n\n{feedback}"
+            # Prepare the final output with RAGAS evaluation
+            final_output = f"{output}\n\n{feedback}"
 
-        # Yield one last time to update with RAGAS evaluation results
-        yield history, "", final_output, session_state
+            # Yield one last time to update with RAGAS evaluation results
+            yield history, "", final_output, session_state
 
 
 def format_pdf_list(pdfs):
@@ -352,43 +369,65 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                     scale=5,
                 )
                 submit_btn = gr.Button("🔍 Submit", elem_id="submit-btn", scale=1)
+                show_history_btn = gr.Button("📜 Show Chat History")
 
             with gr.Row():
                 with gr.Row():
-                    selected_llm_provider = gr.Dropdown(
-                        choices=app.llm_model_providers,
-                        value=app.selected_llm_provider,
-                        label="LLM Model Provider",
-                        # interactive=True,
+                    use_ragas = gr.Checkbox(
+                        label="Use RAGAS", value=app.use_ragas
                     )
-                    llm_model = gr.Dropdown(
-                        choices=app.available_llms[selected_llm_provider.value],
-                        value=app.selected_llm,
-                        label="LLM Model",
-                        # interactive=True,
+                    use_semantic_router = gr.Checkbox(
+                        label="Use Semantic Router", value=app.use_semantic_router
+                    )
+                    use_chat_history = gr.Checkbox(
+                        label="Use Chat History", value=app.use_chat_history
                     )
 
-                    selected_llm_provider.change(
-                        fn=update_llm_model_options,
-                        inputs=[selected_llm_provider, llm_model],
-                        outputs=[llm_model],
-                    )
+            gr.Markdown("### Retrieval Settings")
+            top_k = gr.Slider(
+                minimum=1,
+                maximum=20,
+                value=app.top_k,
+                step=1,
+                label="Top K",
+            )
+            with gr.Row():
+                use_reranker = gr.Checkbox(
+                    label="Use Reranker", value=app.use_rerankers
+                )
+                reranker_type = gr.Dropdown(
+                    choices=list(app.rerankers().keys()),
+                    label="Reranker Type",
+                    value="HuggingFace",
+                    interactive=True,
+                )
 
-                    llm_temperature = gr.Slider(
-                        minimum=0,
-                        maximum=1,
-                        value=app.llm_temperature,
-                        step=0.1,
-                        label="LLM Temperature",
-                    )
+            gr.Markdown("### LLM Generation Settings")
+            with gr.Row():
+                selected_llm_provider = gr.Dropdown(
+                    choices=app.llm_model_providers,
+                    value=app.selected_llm_provider,
+                    label="LLM Model Provider",
+                )
+                llm_model = gr.Dropdown(
+                    choices=app.available_llms[selected_llm_provider.value],
+                    value=app.selected_llm,
+                    label="LLM Model",
+                )
 
-                    top_k = gr.Slider(
-                        minimum=1,
-                        maximum=20,
-                        value=app.top_k,
-                        step=1,
-                        label="Top K",
-                    )
+            selected_llm_provider.change(
+                fn=update_llm_model_options,
+                inputs=[selected_llm_provider, llm_model],
+                outputs=[llm_model],
+            )
+
+            llm_temperature = gr.Slider(
+                minimum=0,
+                maximum=1,
+                value=app.llm_temperature,
+                step=0.1,
+                label="LLM Temperature",
+            )
 
             with gr.Row():
                 use_semantic_cache = gr.Checkbox(
@@ -402,26 +441,10 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                     label="Distance Threshold",
                 )
 
-            with gr.Row():
-                use_reranker = gr.Checkbox(
-                    label="Use Reranker", value=app.use_rerankers
-                )
-                reranker_type = gr.Dropdown(
-                    choices=list(app.rerankers().keys()),
-                    label="Reranker Type",
-                    value="HuggingFace",
-                    interactive=True,
-                )
 
-            with gr.Row():
-                use_chat_history = gr.Checkbox(
-                    label="Use Chat History", value=app.use_chat_history
-                )
-                show_history_btn = gr.Button("Show Chat History")
 
         # Right Half
         with gr.Column(scale=6):
-            #show_pdf = PDF(label="Uploaded PDF", height=600)
             show_pdf = PDF(label="Uploaded PDF", height=600, elem_classes="pdf-parent")
 
             with gr.Row():
@@ -439,28 +462,26 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                     interactive=True,
                 )
 
-                selected_embedding_model_provider.change(
-                    fn=update_embedding_model_options,
-                    inputs=[selected_embedding_model_provider, selected_embedding_model],
-                    outputs=[selected_embedding_model],
-                )
+            selected_embedding_model_provider.change(
+                fn=update_embedding_model_options,
+                inputs=[selected_embedding_model_provider, selected_embedding_model],
+                outputs=[selected_embedding_model],
+            )
 
-            with gr.Row():
-                chunking_technique = gr.Radio(
-                    ["Recursive Character", "Semantic"],
-                    label="Chunking Technique",
-                    value=app.chunking_technique,
-                )
+            chunking_technique = gr.Radio(
+                ["Recursive Character", "Semantic"],
+                label="Chunking Technique",
+                value=app.chunking_technique,
+            )
 
-            with gr.Row():
-                chunk_size = gr.Slider(
-                    minimum=100,
-                    maximum=2500,
-                    value=app.chunk_size,
-                    step=50,
-                    label="Chunk Size",
-                    info="Size of document chunks for processing",
-                )
+            chunk_size = gr.Slider(
+                minimum=100,
+                maximum=2500,
+                value=app.chunk_size,
+                step=50,
+                label="Chunk Size",
+                info="Size of document chunks for processing",
+            )
 
             with gr.Row():
                 select_pdf_btn = gr.Button("📄 Select PDF", elem_id="select-pdf-btn")
@@ -499,7 +520,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
         inputs=[
             chatbot,
             txt,
-            upload_btn,  # Changed from btn to upload_btn
+            upload_btn,
             use_semantic_cache,
             use_reranker,
             reranker_type,
@@ -509,6 +530,8 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             selected_llm_provider,
             llm_temperature,
             use_chat_history,
+            use_semantic_router,
+            use_ragas,
             session_state,
         ],
         outputs=[chatbot, txt, feedback_markdown, session_state],
@@ -534,6 +557,8 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             selected_llm_provider,
             llm_temperature,
             use_chat_history,
+            use_semantic_router,
+            use_ragas,
             session_state,
         ],
         outputs=[chatbot, txt, feedback_markdown, session_state],
@@ -579,6 +604,20 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
         inputs=[session_state],
         outputs=[history_display, history_modal],
     )
+
+    use_semantic_router.change(
+        fn=app.update_semantic_router,
+        inputs=[use_semantic_router],
+        outputs=[],
+    )
+
+    use_ragas.change(
+        fn=app.update_ragas,
+        inputs=[use_ragas],
+        outputs=[],
+    )
+
+
 
     def check_credentials():
         if not app.credentials_set:
