@@ -70,6 +70,8 @@ def add_text(history, text: str):
 
 
 def reset_app():
+    app.clear_semantic_cache()
+
     app.chat_history = []
     app.N = 0
 

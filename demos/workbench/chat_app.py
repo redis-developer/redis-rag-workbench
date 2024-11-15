@@ -332,6 +332,12 @@ class ChatApp:
             redis_url=self.redis_url,
             distance_threshold=self.distance_threshold,
         )
+    
+    def clear_semantic_cache(self):
+        # Always make a new SemanticCache in case use_semantic_cache is False
+        semantic_cache = self.make_semantic_cache()
+        semantic_cache.clear()
+
 
     def update_semantic_cache(self, use_semantic_cache: bool):
         self.use_semantic_cache = use_semantic_cache
