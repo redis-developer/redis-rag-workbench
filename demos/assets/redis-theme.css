@@ -87,6 +87,17 @@ button.confidence-set {
   border-color: var(--col);
 }
 
+.accordion > button {
+  font-size: var(--text-lg);
+  background-color: unset;
+  font-family: unset;
+  text-transform: unset;
+}
+
+.accordion > button > span {
+  font-size: inherit;
+}
+
 dl.label:hover {
   color: var(--violet);
 }

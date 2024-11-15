@@ -27,6 +27,7 @@ from shared_components.cached_llm import CachedLLM
 from shared_components.llm_utils import openai_models
 from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
+from shared_components.converters import str_to_bool
 
 load_dotenv()
 
@@ -65,33 +66,39 @@ class ChatApp:
         self.RERANKERS = {}
 
         # Initialize non-API dependent variables
-        self.chunk_size = 500
-        self.chunking_technique = "Recursive Character"
+        self.chunk_size = int(os.environ.get("DEFAULT_CHUNK_SIZE", 500))
+        self.chunking_technique = os.environ.get("DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character")
         self.chain = None
         self.chat_history = None
         self.N = 0
         self.count = 0
-        self.use_semantic_cache = False
-        self.use_rerankers = False
-        self.top_k = 3
-        self.distance_threshold = 0.30
-        self.llm_temperature = 0.7
-        self.use_chat_history = False
-        self.use_semantic_router = False
-        self.use_ragas = False
+        self.use_semantic_cache = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_CACHE"))
+        self.use_rerankers = str_to_bool(os.environ.get("DEFAULT_USE_RERANKERS"))
+        self.top_k = int(os.environ.get("DEFAULT_TOP_K", 3))
+        self.distance_threshold = float(os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30))
+        self.llm_temperature = float(os.environ.get("DEFAULT_LLM_TEMPERATURE", 0.7))
+        self.use_chat_history = str_to_bool(os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
+        self.use_semantic_router = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER"))
+        self.use_ragas = str_to_bool(os.environ.get("DEFAULT_USE_RAGAS"))
 
         self.available_llms = {
             "openai": sorted(openai_models()),
-            "azure-openai": [self.azure_openai_deployment],
         }
+
+        if self.azure_openai_deployment is not None:
+            self.available_llms["azure-openai"] = [self.azure_openai_deployment]
+
         self.llm_model_providers = list(self.available_llms.keys())
         self.selected_llm_provider = "openai"
         self.selected_llm = "gpt-3.5-turbo"
 
         self.available_embedding_models = {
             "openai": ["text-embedding-ada-002", "text-embedding-3-small"],
-            "azure-openai": ["text-embedding-ada-002", "text-embedding-3-small"],
         }
+
+        if self.azure_openai_deployment is not None:
+            self.available_embedding_models["azure-openai"] = ["text-embedding-ada-002", "text-embedding-3-small"]
+
         self.embedding_model_providers = list(self.available_embedding_models.keys())
         self.selected_embedding_model_provider = "openai"
         self.selected_embedding_model = "text-embedding-ada-002"
