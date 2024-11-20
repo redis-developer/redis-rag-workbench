@@ -93,9 +93,9 @@ def reset_app():
     app.use_ragas = str_to_bool(os.environ.get("DEFAULT_USE_RAGAS"))
 
     return (
-        [], 
-        None, 
-        "", 
+        [],
+        None,
+        "",
         gr.update(visible=True, value=""),
         gr.update(value=app.chunk_size),
         gr.update(value=app.chunking_technique),
@@ -170,6 +170,7 @@ def get_response(
 ):
     if not session_state:
         app.session_state = app.initialize_session()
+        session_state = app.session_state
     if not file and not app.chain:
         raise gr.Error(message="Please upload or select a PDF first")
 
@@ -630,10 +631,10 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
         fn=reset_app,
         inputs=None,
         outputs=[
-            chatbot, 
-            show_pdf, 
-            txt, 
-            feedback_markdown, 
+            chatbot,
+            show_pdf,
+            txt,
+            feedback_markdown,
             chunk_size,
             chunking_technique,
             use_semantic_cache,
