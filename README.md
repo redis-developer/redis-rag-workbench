@@ -8,39 +8,26 @@
 
 </div>
 
-🛠️ **Redis RAG Workbench** is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and more.
+🛠️ **Redis RAG Workbench** is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and **semantic routing**.
 
 <div></div>
 
 
-## Features
-
-- Integration with Redis for vector storage and caching
-- Support for various LLM models and reranking techniques
-- Modular architecture for easy extension and customization (soon)
-
 ## Prerequisites
 
-- Python >= 3.11 and [Poetry](https://python-poetry.org/docs/#installation)
-- Redis Stack
-   ```bash
-   docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
-   ```
-- [OpenAI API key](https://platform.openai.com/)
-- [Cohere API key](https://cohere.com/) (for optional reranking features)
+1. Make sure you have the following tools available:
+   - [Docker](https://www.docker.com/products/docker-desktop/)
+   - Python >= 3.11 and [Poetry](https://python-poetry.org/docs/#installation)
+   - [OpenAI API key](https://platform.openai.com/)
+   - [Cohere API key](https://cohere.com/) (for optional reranking features)
 
-## Installation
 
-1. Clone the repository:
+2. Clone the repository:
    ```bash
    git clone https://github.com/redis-developer/redis-rag-workbench.git
    cd redis-rag-workbench
    ```
 
-2. Install the required dependencies with Poetry:
-   ```bash
-   poetry install --no-root
-   ```
 
 3. Set up your environment variables by creating a `.env` file in the project root:
    ```env
@@ -49,29 +36,30 @@
    COHERE_API_KEY=your_cohere_api_key
    ```
 
-## Running the Application
 
-To start the application, run:
-
-```bash
-poetry run uvicorn main:app --reload
-```
+## Start the workbench
+In the root of the repository, run the following to spin up the docker compose stack:
+   ```bash
+   docker compose -f docker-compose.yml up
+   ```
 
 > This will start the server, and you can access the workbench by navigating to `http://localhost:8000` in your web browser.
 
-<div><img src="assets/workbench_sample.jpg" style="width: 625px"> </div>
+<div><img src="assets/workbench_sample.png" style="width: 625px"> </div>
+
+> The first time the application runs, it will have to download model weights from huggingface and may take a few minutes.
 
 
 ## Project Structure
 
 - `main.py`: The entry point of the application
-- `demos/`: Contains individual RAG demo implementations
+- `demos/`: Contains workbench demo implementation
 - `shared_components/`: Reusable utilities and components
 - `static/`: Static assets for the web interface
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+🤝 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 

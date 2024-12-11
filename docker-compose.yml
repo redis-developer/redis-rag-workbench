@@ -1,7 +1,7 @@
 name: redis-rag-workbench
 services:
   redis:
-    image: "redis/redis-stack:edge"
+    image: "redis/redis-stack:latest"
     ports:
       - 6002:6379
     deploy:
