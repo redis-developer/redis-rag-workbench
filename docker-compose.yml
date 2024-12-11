@@ -1,10 +1,30 @@
 name: redis-rag-workbench
 services:
   redis:
-    image: "redis/redis-stack:edge"
+    image: "redis/redis-stack:latest"
     ports:
-      - "6379:6379"
+      - 6002:6379
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
+  app:
+    container_name: app
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    ports:
+      - 8000:8000
+    env_file:
+      - ./.env
+      - ./.env.docker
+    volumes:
+      - ./assets:/app/assets
+      - ./demos:/app/demos
+      - ./pdf_storage:/app/pdf_storage
+      - ./shared_components:/app/shared_components
+      - ./static:/app/static
+      - ./main.py:/app/main.py
+    restart: always
+    depends_on:
+      - redis

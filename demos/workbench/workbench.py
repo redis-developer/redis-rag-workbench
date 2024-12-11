@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import datetime
 
@@ -8,6 +9,7 @@ from langchain_community.callbacks import get_openai_callback
 
 from demos.workbench.chat_app import ChatApp, generate_feedback
 from shared_components.theme_management import load_theme
+from shared_components.converters import str_to_bool
 
 # app to be used in the gradio app
 app = ChatApp()
@@ -68,27 +70,44 @@ def add_text(history, text: str):
 
 
 def reset_app():
+    app.clear_semantic_cache()
+
     app.chat_history = []
     app.N = 0
 
     app.current_pdf_index = None
     app.index_name = None
-    app.chunk_size = 500
-    app.chunking_technique = "Recursive Character"
+    app.chunk_size = int(os.environ.get("DEFAULT_CHUNK_SIZE", 500))
+    app.chunking_technique = os.environ.get("DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character")
     app.chain = None
     app.chat_history = None
     app.N = 0
     app.count = 0
-    app.use_semantic_cache = False
-    app.use_rerankers = False
-    app.top_k = 3
-    app.distance_threshold = 0.30
-    app.llm_temperature = 0.7
-    app.use_chat_history = False
-    app.use_semantic_router = False
-    app.use_ragas = False
+    app.use_semantic_cache = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_CACHE"))
+    app.use_rerankers = str_to_bool(os.environ.get("DEFAULT_USE_RERANKERS"))
+    app.top_k = int(os.environ.get("DEFAULT_TOP_K", 3))
+    app.distance_threshold = float(os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30))
+    app.llm_temperature = float(os.environ.get("DEFAULT_LLM_TEMPERATURE", 0.7))
+    app.use_chat_history = str_to_bool(os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
+    app.use_semantic_router = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER"))
+    app.use_ragas = str_to_bool(os.environ.get("DEFAULT_USE_RAGAS"))
 
-    return [], None, "", gr.update(visible=True, value="")
+    return (
+        [],
+        None,
+        "",
+        gr.update(visible=True, value=""),
+        gr.update(value=app.chunk_size),
+        gr.update(value=app.chunking_technique),
+        gr.update(value=app.use_semantic_cache),
+        gr.update(value=app.use_rerankers),
+        gr.update(value=app.top_k),
+        gr.update(value=app.distance_threshold),
+        gr.update(value=app.llm_temperature),
+        gr.update(value=app.use_chat_history),
+        gr.update(value=app.use_semantic_router),
+        gr.update(value=app.use_ragas),
+    )
 
 
 # Connect the show_history_btn to the display_chat_history function and show the modal
@@ -151,6 +170,7 @@ def get_response(
 ):
     if not session_state:
         app.session_state = app.initialize_session()
+        session_state = app.session_state
     if not file and not app.chain:
         raise gr.Error(message="Please upload or select a PDF first")
 
@@ -383,84 +403,99 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                         label="Use Chat History", value=app.use_chat_history
                     )
 
-            gr.Markdown("### Retrieval Settings")
-            top_k = gr.Slider(
-                minimum=1,
-                maximum=20,
-                value=app.top_k,
-                step=1,
-                label="Top K",
-            )
-            with gr.Row():
-                use_reranker = gr.Checkbox(
-                    label="Use Reranker", value=app.use_rerankers
+            with gr.Accordion(
+                label="Cache Settings",
+                elem_classes=["accordion"]
+            ):
+                with gr.Row():
+                    use_semantic_cache = gr.Checkbox(
+                        label="Use Semantic Cache", value=app.use_semantic_cache
+                    )
+                    distance_threshold = gr.Slider(
+                        minimum=0.01,
+                        maximum=1.0,
+                        value=app.distance_threshold,
+                        step=0.01,
+                        label="Distance Threshold",
+                    )
+
+            with gr.Accordion(
+                label="Retrieval Settings",
+                open=False,
+                elem_classes=["accordion"],
+            ):
+                top_k = gr.Slider(
+                    minimum=1,
+                    maximum=20,
+                    value=app.top_k,
+                    step=1,
+                    label="Top K",
                 )
-                reranker_type = gr.Dropdown(
-                    choices=list(app.rerankers().keys()),
-                    label="Reranker Type",
-                    value="HuggingFace",
-                    interactive=True,
+                with gr.Row():
+                    use_reranker = gr.Checkbox(
+                        label="Use Reranker", value=app.use_rerankers
+                    )
+                    reranker_type = gr.Dropdown(
+                        choices=list(app.rerankers().keys()),
+                        label="Reranker Type",
+                        value="HuggingFace",
+                        interactive=True,
+                    )
+
+            with gr.Accordion(
+                label="LLM Generation Settings",
+                open=False,
+                elem_classes=["accordion"],
+            ):
+                with gr.Row():
+                    selected_llm_provider = gr.Dropdown(
+                        choices=app.llm_model_providers,
+                        value=app.selected_llm_provider,
+                        label="LLM Model Provider",
+                    )
+                    llm_model = gr.Dropdown(
+                        choices=app.available_llms[selected_llm_provider.value],
+                        value=app.selected_llm,
+                        label="LLM Model",
+                    )
+
+                selected_llm_provider.change(
+                    fn=update_llm_model_options,
+                    inputs=[selected_llm_provider, llm_model],
+                    outputs=[llm_model],
                 )
 
-            gr.Markdown("### LLM Generation Settings")
-            with gr.Row():
-                selected_llm_provider = gr.Dropdown(
-                    choices=app.llm_model_providers,
-                    value=app.selected_llm_provider,
-                    label="LLM Model Provider",
+                llm_temperature = gr.Slider(
+                    minimum=0,
+                    maximum=1,
+                    value=app.llm_temperature,
+                    step=0.1,
+                    label="LLM Temperature",
                 )
-                llm_model = gr.Dropdown(
-                    choices=app.available_llms[selected_llm_provider.value],
-                    value=app.selected_llm,
-                    label="LLM Model",
-                )
-
-            selected_llm_provider.change(
-                fn=update_llm_model_options,
-                inputs=[selected_llm_provider, llm_model],
-                outputs=[llm_model],
-            )
-
-            llm_temperature = gr.Slider(
-                minimum=0,
-                maximum=1,
-                value=app.llm_temperature,
-                step=0.1,
-                label="LLM Temperature",
-            )
-
-            with gr.Row():
-                use_semantic_cache = gr.Checkbox(
-                    label="Use Semantic Cache", value=app.use_semantic_cache
-                )
-                distance_threshold = gr.Slider(
-                    minimum=0.01,
-                    maximum=1.0,
-                    value=app.distance_threshold,
-                    step=0.01,
-                    label="Distance Threshold",
-                )
-
-
 
         # Right Half
         with gr.Column(scale=6):
             show_pdf = PDF(label="Uploaded PDF", height=600, elem_classes="pdf-parent")
 
-            with gr.Row():
-                selected_embedding_model_provider = gr.Dropdown(
-                    choices=app.embedding_model_providers,
-                    value=app.selected_embedding_model_provider,
-                    label="Embedding Model Provider",
-                    interactive=True,
-                )
+            with gr.Accordion(
+                label="Model Settings",
+                open=False,
+                elem_classes=["accordion"],
+            ):
+                with gr.Row():
+                    selected_embedding_model_provider = gr.Dropdown(
+                        choices=app.embedding_model_providers,
+                        value=app.selected_embedding_model_provider,
+                        label="Embedding Model Provider",
+                        interactive=True,
+                    )
 
-                selected_embedding_model = gr.Dropdown(
-                    choices=app.available_embedding_models[selected_embedding_model_provider.value],
-                    value=app.selected_embedding_model,
-                    label="Embedding Model",
-                    interactive=True,
-                )
+                    selected_embedding_model = gr.Dropdown(
+                        choices=app.available_embedding_models[selected_embedding_model_provider.value],
+                        value=app.selected_embedding_model,
+                        label="Embedding Model",
+                        interactive=True,
+                    )
 
             selected_embedding_model_provider.change(
                 fn=update_embedding_model_options,
@@ -468,20 +503,25 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                 outputs=[selected_embedding_model],
             )
 
-            chunking_technique = gr.Radio(
-                ["Recursive Character", "Semantic"],
-                label="Chunking Technique",
-                value=app.chunking_technique,
-            )
+            with gr.Accordion(
+                label="Chunking Settings",
+                open=False,
+                elem_classes=["accordion"],
+            ):
+                chunking_technique = gr.Radio(
+                    ["Recursive Character", "Semantic"],
+                    label="Chunking Technique",
+                    value=app.chunking_technique,
+                )
 
-            chunk_size = gr.Slider(
-                minimum=100,
-                maximum=2500,
-                value=app.chunk_size,
-                step=50,
-                label="Chunk Size",
-                info="Size of document chunks for processing",
-            )
+                chunk_size = gr.Slider(
+                    minimum=100,
+                    maximum=2500,
+                    value=app.chunk_size,
+                    step=50,
+                    label="Chunk Size",
+                    info="Size of document chunks for processing",
+                )
 
             with gr.Row():
                 select_pdf_btn = gr.Button("📄 Select PDF", elem_id="select-pdf-btn")
@@ -590,7 +630,21 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
     reset_btn.click(
         fn=reset_app,
         inputs=None,
-        outputs=[chatbot, show_pdf, txt, feedback_markdown],
+        outputs=[
+            chatbot,
+            show_pdf,
+            txt,
+            feedback_markdown,
+            chunk_size,
+            chunking_technique,
+            use_semantic_cache,
+            use_reranker,
+            top_k,
+            distance_threshold,
+            llm_temperature,
+            use_chat_history,
+            use_semantic_router,
+            use_ragas],
     )
 
     use_chat_history.change(
