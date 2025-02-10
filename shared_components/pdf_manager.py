@@ -60,9 +60,11 @@ class PDFManager:
                 return
             except ResponseError as e:
                 # Only proceed if the error is about the index not existing
-                if "Unknown index name" not in str(e):
+                if "Unknown index name" not in str(e) or "no such index" not in str(e):
+                    logger.info("Creating new search index")
+                else:
                     raise
-                logger.info("Creating new search index")
+                
 
             # Create the index
             schema = (
