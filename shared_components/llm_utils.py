@@ -28,3 +28,11 @@ def openai_models():
         "code-cushman-002",
         "code-cushman-001",
     ]
+
+def gemini_models():
+    return [
+        "gemini-2.0-flash-thinking-exp-01-21",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-1.0-pro",
+    ]

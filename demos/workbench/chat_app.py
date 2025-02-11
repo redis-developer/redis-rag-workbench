@@ -1,3 +1,5 @@
+from enum import StrEnum
+import json
 import os
 import os.path
 from typing import Any, List, Optional
@@ -13,6 +15,9 @@ from langchain_openai import (
     ChatOpenAI,
     OpenAIEmbeddings,
 )
+from google.auth import load_credentials_from_dict
+import vertexai
+from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
 from ragas.metrics import answer_relevancy, faithfulness
@@ -24,7 +29,7 @@ from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 from ulid import ULID
 
 from shared_components.cached_llm import CachedLLM
-from shared_components.llm_utils import openai_models
+from shared_components.llm_utils import gemini_models, openai_models
 from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
 from shared_components.converters import str_to_bool
@@ -32,6 +37,11 @@ from shared_components.converters import str_to_bool
 load_dotenv()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+class LLMs(StrEnum):
+    openai = "openai"
+    azure = "azure-openai"
+    vertexai = "vertexai"
 
 
 class ChatApp:
@@ -49,9 +59,11 @@ class ChatApp:
         self.azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
         self.azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
 
+        self.gcloud_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        self.gcloud_project_id = os.environ.get("GOOGLE_CLOUD_PROJECT_ID")
+
         required_vars = {
             "REDIS_URL": os.environ.get("REDIS_URL"),
-            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
             "COHERE_API_KEY": os.environ.get("COHERE_API_KEY"),
         }
 
@@ -81,27 +93,52 @@ class ChatApp:
         self.use_semantic_router = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER"))
         self.use_ragas = str_to_bool(os.environ.get("DEFAULT_USE_RAGAS"))
 
-        self.available_llms = {
-            "openai": sorted(openai_models()),
-        }
+        self.available_llms = {}
+
+        if self.openai_api_key is not None:
+            self.available_llms[LLMs.openai] = sorted(openai_models())
 
         if self.azure_openai_deployment is not None:
-            self.available_llms["azure-openai"] = [self.azure_openai_deployment]
+            self.available_llms[LLMs.azure] = [self.azure_openai_deployment]
+
+        if self.gcloud_credentials is not None:
+            self.vertexai_credentials, _ = load_credentials_from_dict(json.loads(self.gcloud_credentials))
+            vertexai.init(project=self.gcloud_project_id, credentials=self.vertexai_credentials)
+            self.available_llms[LLMs.vertexai] = sorted(gemini_models())
 
         self.llm_model_providers = list(self.available_llms.keys())
-        self.selected_llm_provider = "openai"
-        self.selected_llm = "gpt-3.5-turbo"
 
-        self.available_embedding_models = {
-            "openai": ["text-embedding-ada-002", "text-embedding-3-small"],
-        }
+        self.available_embedding_models = {}
+
+        if self.openai_api_key is not None:
+            self.available_embedding_models[LLMs.openai] = ["text-embedding-ada-002", "text-embedding-3-small"]
 
         if self.azure_openai_deployment is not None:
-            self.available_embedding_models["azure-openai"] = ["text-embedding-ada-002", "text-embedding-3-small"]
+            self.available_embedding_models[LLMs.azure] = ["text-embedding-ada-002", "text-embedding-3-small"]
+
+        if self.gcloud_credentials is not None:
+            self.available_embedding_models[LLMs.vertexai] = ["text-embedding-004", "textembedding-gecko@003", "textembedding-gecko@001"]
 
         self.embedding_model_providers = list(self.available_embedding_models.keys())
-        self.selected_embedding_model_provider = "openai"
-        self.selected_embedding_model = "text-embedding-ada-002"
+
+        if LLMs.openai in self.llm_model_providers:
+          self.selected_llm_provider = LLMs.openai
+          self.selected_llm = "gpt-3.5-turbo"
+          self.selected_embedding_model_provider = LLMs.openai
+          self.selected_embedding_model = "text-embedding-ada-002"
+        elif LLMs.azure in self.llm_model_providers:
+          self.selected_llm_provider = LLMs.azure
+          self.selected_llm = self.azure_openai_deployment
+          self.selected_embedding_model_provider = LLMs.azure
+          self.selected_embedding_model = "text-embedding-ada-002"
+        elif LLMs.vertexai in self.llm_model_providers:
+          self.selected_llm_provider = LLMs.vertexai
+          self.selected_llm = "gemini-1.5-pro"
+          self.selected_embedding_model_provider = LLMs.vertexai
+          self.selected_embedding_model = "text-embedding-004"
+        else:
+            raise Exception("You need to specify credentials for either OpenAI, Azure, or Google Cloud")
+            
 
         self.llm = None
         self.evalutor_llm = None
@@ -178,41 +215,62 @@ class ChatApp:
 
     def get_llm(self):
         """Get the right LLM based on settings and config."""
-        if self.selected_llm_provider == "azure-openai":
-            try:
-                model = AzureChatOpenAI(
-                    azure_deployment=self.selected_llm,
-                    api_version=self.azure_openai_api_version,
-                    api_key=self.azure_openai_api_key,
-                    azure_endpoint=self.azure_openai_endpoint,
-                    temperature=self.llm_temperature,
-                    max_tokens=None,
-                    timeout=None,
-                    max_retries=2,
+        match self.selected_llm_provider:
+            case LLMs.azure:
+                try:
+                    model = AzureChatOpenAI(
+                        azure_deployment=self.selected_llm,
+                        api_version=self.azure_openai_api_version,
+                        api_key=self.azure_openai_api_key,
+                        azure_endpoint=self.azure_openai_endpoint,
+                        temperature=self.llm_temperature,
+                        max_tokens=None,
+                        timeout=None,
+                        max_retries=2,
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
+                    )
+            case LLMs.vertexai:
+                try:
+                    model = ChatVertexAI(
+                        model=self.selected_llm,
+                        temperature=self.llm_temperature,
+                        max_tokens=None,
+                        stop=None,
+                        max_retries=2,
+                        credentials=self.vertexai_credentials,
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Error initializing VertexAI model: {e} - must provide credentials for deployment"
+                    )
+            case _:
+                model = ChatOpenAI(
+                    model=self.selected_llm,
+                    temperature=0,
                 )
-            except Exception as e:
-                raise ValueError(
-                    f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
-                )
-        else:
-            model = ChatOpenAI(
-                model=self.selected_llm,
-                temperature=0,
-            )
 
         return model
 
     def get_embedding_model(self):
         """Get the right embedding model based on settings and config"""
-        if self.selected_embedding_model_provider == "azure-openai":
-            return AzureOpenAIEmbeddings(
-                model=self.selected_embedding_model,
-                api_key=self.azure_openai_api_key,
-                api_version=self.azure_openai_api_version,
-                azure_endpoint=self.azure_openai_endpoint,
-            )
-        else:
-            return OpenAIEmbeddings(api_key=self.openai_api_key)
+        match self.selected_embedding_model_provider:
+            case LLMs.azure:
+                return AzureOpenAIEmbeddings(
+                    model=self.selected_embedding_model,
+                    api_key=self.azure_openai_api_key,
+                    api_version=self.azure_openai_api_version,
+                    azure_endpoint=self.azure_openai_endpoint,
+                )
+            case LLMs.vertexai:
+                return VertexAIEmbeddings(
+                    model=self.selected_embedding_model,
+                    credentials=self.vertexai_credentials,
+                )
+            case _:
+                return OpenAIEmbeddings(api_key=self.openai_api_key)
 
     def get_reranker_choices(self):
         if self.initialized:

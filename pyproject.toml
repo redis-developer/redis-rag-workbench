@@ -32,6 +32,7 @@ gradio-modal = "^0.0.4"
 python-ulid = "^2.7.0"
 pandas = "2.2.3"
 gradio-pdf = "^0.0.22"
+langchain-google-vertexai = "^2.0.13"
 
 
 [build-system]

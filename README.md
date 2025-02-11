@@ -50,6 +50,15 @@ In the root of the repository, run the following to spin up the docker compose s
 > The first time the application runs, it will have to download model weights from huggingface and may take a few minutes.
 
 
+## Using Google VertexAI
+The Workbench can be used with VertexAI, but requires you to set up your credentials using the `gcloud` CLI. The easiest way to do this is as follows:
+
+1. Make sure you have a [gcloud project setup](https://cloud.google.com/vertex-ai/docs/start/cloud-environment) with the VertexAI API enabled.
+2. Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install)
+3. Follow the instructions to run the [`gcloud auth application-default login`](https://cloud.google.com/docs/authentication/application-default-credentials#personal) command
+4. Copy the JSON from the generated `application_default_credentials.json` into your `.env` file using the `GOOGLE_APPLICATION_CREDENTIALS` variable
+5. Set the `GOOGLE_CLOUD_PROJECT_ID` environment variable in your `.env` file to the associated gcloud project you want to use.
+
 ## Project Structure
 
 - `main.py`: The entry point of the application
