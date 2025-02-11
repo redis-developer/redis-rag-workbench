@@ -116,8 +116,8 @@ checkbox {
   flex: 1;
 }
 
-#submit-btn {
-  width: 50px;
+.chat-button {
+  margin: auto 0;
 }
 
 #upload-btn,

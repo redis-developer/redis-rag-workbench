@@ -1,9 +1,9 @@
 name: redis-rag-workbench
 services:
   redis:
-    image: "redis:8.0-M03"
+    image: "redis/redis-stack:latest"
     ports:
-      - 6379:6379
+      - 6002:6379
     deploy:
       replicas: 1
       restart_policy:

@@ -386,19 +386,21 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                     show_label=False,
                     placeholder="Enter text and press enter",
                     elem_id="txt",
-                    scale=5,
+                    scale=4,
                 )
-                submit_btn = gr.Button("🔍 Submit", elem_id="submit-btn", scale=1)
-                show_history_btn = gr.Button("📜 Show Chat History")
+                submit_btn = gr.Button("🔍 Submit", elem_classes="chat-button", scale=1)
+                show_history_btn = gr.Button("📜 Chat History", elem_classes="chat-button", scale=2)
 
-            with gr.Row():
-                with gr.Row():
+            with gr.Row(equal_height=True):
+                with gr.Column(min_width=210):
                     use_ragas = gr.Checkbox(
                         label="Use RAGAS", value=app.use_ragas
                     )
+                with gr.Column(min_width=210):
                     use_semantic_router = gr.Checkbox(
                         label="Use Semantic Router", value=app.use_semantic_router
                     )
+                with gr.Column(min_width=210):
                     use_chat_history = gr.Checkbox(
                         label="Use Chat History", value=app.use_chat_history
                     )
