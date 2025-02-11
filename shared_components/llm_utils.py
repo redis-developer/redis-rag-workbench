@@ -6,6 +6,7 @@ class LLMs(StrEnum):
     azure = "azure-openai"
     vertexai = "vertexai"
 
+
 def openai_models():
     return [
         "gpt-4o",
@@ -37,6 +38,7 @@ def openai_models():
         "code-cushman-001",
     ]
 
+
 def gemini_models():
     return [
         "gemini-2.0-flash-thinking-exp-01-21",
@@ -45,21 +47,27 @@ def gemini_models():
         "gemini-1.0-pro",
     ]
 
+
 def vertex_embedding_models():
-    return [
-        "text-embedding-004", 
-        "textembedding-gecko@003", 
-        "textembedding-gecko@001"
-    ]
+    return ["text-embedding-004", "textembedding-gecko@003", "textembedding-gecko@001"]
+
 
 # Pricing info: https://cloud.google.com/vertex-ai/generative-ai/pricing
 def calculate_vertexai_cost(input_tokens, output_tokens, model):
     match model:
         case "gemini-2.0-flash-thinking-exp-01-21":
-            return ((input_tokens / 1_000_000) * 0.15) + ((output_tokens / 1_000_000) * 0.6)
+            return ((input_tokens / 1_000_000) * 0.15) + (
+                (output_tokens / 1_000_000) * 0.6
+            )
         case "gemini-1.5-flash":
-            return (((input_tokens * 4) / 1000) * 0.00001875) + (((output_tokens * 4) / 1000) * 0.000075)
+            return (((input_tokens * 4) / 1000) * 0.00001875) + (
+                ((output_tokens * 4) / 1000) * 0.000075
+            )
         case "gemini-1.5-pro":
-            return (((input_tokens * 4) / 1000) * 0.0003125) + (((output_tokens * 4) / 1000) * 0.00125)
+            return (((input_tokens * 4) / 1000) * 0.0003125) + (
+                ((output_tokens * 4) / 1000) * 0.00125
+            )
         case "gemini-1.0-pro":
-            return (((input_tokens * 4) / 1000) * 0.000125) + (((output_tokens * 4) / 1000) * 0.000375)
+            return (((input_tokens * 4) / 1000) * 0.000125) + (
+                ((output_tokens * 4) / 1000) * 0.000375
+            )

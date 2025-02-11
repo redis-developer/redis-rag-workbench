@@ -1,38 +1,36 @@
-from enum import StrEnum
 import json
 import os
 import os.path
 from typing import Any, List, Optional
 
+import vertexai
 from datasets import Dataset
 from dotenv import load_dotenv
+from google.auth import load_credentials_from_dict
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_openai import (
     AzureChatOpenAI,
     AzureOpenAIEmbeddings,
     ChatOpenAI,
     OpenAIEmbeddings,
 )
-from google.auth import load_credentials_from_dict
-import vertexai
-from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
-from ragas.metrics import answer_relevancy, faithfulness
 from ragas.llms import LangchainLLMWrapper
-from redis.exceptions import ResponseError
+from ragas.metrics import answer_relevancy, faithfulness
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.extensions.router import SemanticRouter
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 from ulid import ULID
 
 from shared_components.cached_llm import CachedLLM
+from shared_components.converters import str_to_bool
 from shared_components.llm_utils import LLMs, gemini_models, openai_models
 from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
-from shared_components.converters import str_to_bool
 
 load_dotenv()
 
@@ -49,8 +47,12 @@ class ChatApp:
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.cohere_api_key = os.environ.get("COHERE_API_KEY")
 
-        self.azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION")  # ex: 2024-08-01-preview
-        self.azure_openai_api_key = os.environ.get("AZURE_OPENAI_API_KEY")  # ex: 1234567890abcdef
+        self.azure_openai_api_version = os.environ.get(
+            "AZURE_OPENAI_API_VERSION"
+        )  # ex: 2024-08-01-preview
+        self.azure_openai_api_key = os.environ.get(
+            "AZURE_OPENAI_API_KEY"
+        )  # ex: 1234567890abcdef
         self.azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
         self.azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
 
@@ -74,18 +76,26 @@ class ChatApp:
 
         # Initialize non-API dependent variables
         self.chunk_size = int(os.environ.get("DEFAULT_CHUNK_SIZE", 500))
-        self.chunking_technique = os.environ.get("DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character")
+        self.chunking_technique = os.environ.get(
+            "DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character"
+        )
         self.chain = None
         self.chat_history = None
         self.N = 0
         self.count = 0
-        self.use_semantic_cache = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_CACHE"))
+        self.use_semantic_cache = str_to_bool(
+            os.environ.get("DEFAULT_USE_SEMANTIC_CACHE")
+        )
         self.use_rerankers = str_to_bool(os.environ.get("DEFAULT_USE_RERANKERS"))
         self.top_k = int(os.environ.get("DEFAULT_TOP_K", 3))
-        self.distance_threshold = float(os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30))
+        self.distance_threshold = float(
+            os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30)
+        )
         self.llm_temperature = float(os.environ.get("DEFAULT_LLM_TEMPERATURE", 0.7))
         self.use_chat_history = str_to_bool(os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
-        self.use_semantic_router = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER"))
+        self.use_semantic_router = str_to_bool(
+            os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER")
+        )
         self.use_ragas = str_to_bool(os.environ.get("DEFAULT_USE_RAGAS"))
 
         self.available_llms = {}
@@ -97,8 +107,12 @@ class ChatApp:
             self.available_llms[LLMs.azure] = [self.azure_openai_deployment]
 
         if self.gcloud_credentials is not None:
-            self.vertexai_credentials, _ = load_credentials_from_dict(json.loads(self.gcloud_credentials))
-            vertexai.init(project=self.gcloud_project_id, credentials=self.vertexai_credentials)
+            self.vertexai_credentials, _ = load_credentials_from_dict(
+                json.loads(self.gcloud_credentials)
+            )
+            vertexai.init(
+                project=self.gcloud_project_id, credentials=self.vertexai_credentials
+            )
             self.available_llms[LLMs.vertexai] = sorted(gemini_models())
 
         self.llm_model_providers = list(self.available_llms.keys())
@@ -106,34 +120,45 @@ class ChatApp:
         self.available_embedding_models = {}
 
         if self.openai_api_key is not None:
-            self.available_embedding_models[LLMs.openai] = ["text-embedding-ada-002", "text-embedding-3-small"]
+            self.available_embedding_models[LLMs.openai] = [
+                "text-embedding-ada-002",
+                "text-embedding-3-small",
+            ]
 
         if self.azure_openai_deployment is not None:
-            self.available_embedding_models[LLMs.azure] = ["text-embedding-ada-002", "text-embedding-3-small"]
+            self.available_embedding_models[LLMs.azure] = [
+                "text-embedding-ada-002",
+                "text-embedding-3-small",
+            ]
 
         if self.gcloud_credentials is not None:
-            self.available_embedding_models[LLMs.vertexai] = ["text-embedding-004", "textembedding-gecko@003", "textembedding-gecko@001"]
+            self.available_embedding_models[LLMs.vertexai] = [
+                "text-embedding-004",
+                "textembedding-gecko@003",
+                "textembedding-gecko@001",
+            ]
 
         self.embedding_model_providers = list(self.available_embedding_models.keys())
 
         if LLMs.openai in self.llm_model_providers:
-          self.selected_llm_provider = LLMs.openai
-          self.selected_llm = "gpt-3.5-turbo"
-          self.selected_embedding_model_provider = LLMs.openai
-          self.selected_embedding_model = "text-embedding-ada-002"
+            self.selected_llm_provider = LLMs.openai
+            self.selected_llm = "gpt-3.5-turbo"
+            self.selected_embedding_model_provider = LLMs.openai
+            self.selected_embedding_model = "text-embedding-ada-002"
         elif LLMs.azure in self.llm_model_providers:
-          self.selected_llm_provider = LLMs.azure
-          self.selected_llm = self.azure_openai_deployment
-          self.selected_embedding_model_provider = LLMs.azure
-          self.selected_embedding_model = "text-embedding-ada-002"
+            self.selected_llm_provider = LLMs.azure
+            self.selected_llm = self.azure_openai_deployment
+            self.selected_embedding_model_provider = LLMs.azure
+            self.selected_embedding_model = "text-embedding-ada-002"
         elif LLMs.vertexai in self.llm_model_providers:
-          self.selected_llm_provider = LLMs.vertexai
-          self.selected_llm = "gemini-1.5-pro"
-          self.selected_embedding_model_provider = LLMs.vertexai
-          self.selected_embedding_model = "text-embedding-004"
+            self.selected_llm_provider = LLMs.vertexai
+            self.selected_llm = "gemini-1.5-pro"
+            self.selected_embedding_model_provider = LLMs.vertexai
+            self.selected_embedding_model = "text-embedding-004"
         else:
-            raise Exception("You need to specify credentials for either OpenAI, Azure, or Google Cloud")
-            
+            raise Exception(
+                "You need to specify credentials for either OpenAI, Azure, or Google Cloud"
+            )
 
         self.llm = None
         self.evalutor_llm = None
@@ -160,7 +185,9 @@ class ChatApp:
         }
 
         # Init semantic router
-        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True)
+        self.semantic_router = SemanticRouter.from_yaml(
+            "demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True
+        )
 
         # Init chat history if use_chat_history is True
         if self.use_chat_history:
@@ -174,7 +201,6 @@ class ChatApp:
         self.update_llm()
 
         self.initialized = True
-
 
     def initialize_session(self):
         self.session_id = str(ULID())
@@ -319,11 +345,6 @@ class ChatApp:
                     redis_url=self.redis_url,
                     index_name="idx:chat_history",
                 )
-
-            try:
-                messages_count = len(session_state["chat_history"].messages)
-            except Exception as e:
-                print(f"DEBUG: Error getting chat history length: {str(e)}")
         else:
             if "chat_history" in session_state and session_state["chat_history"]:
                 try:
@@ -385,12 +406,11 @@ class ChatApp:
             redis_url=self.redis_url,
             distance_threshold=self.distance_threshold,
         )
-    
+
     def clear_semantic_cache(self):
         # Always make a new SemanticCache in case use_semantic_cache is False
         semantic_cache = self.make_semantic_cache()
         semantic_cache.clear()
-
 
     def update_semantic_cache(self, use_semantic_cache: bool):
         self.use_semantic_cache = use_semantic_cache
@@ -466,7 +486,7 @@ class ChatApp:
             eval_results = evaluate(
                 dataset=ds,
                 metrics=[faithfulness, answer_relevancy],
-                llm=self.evalutor_llm
+                llm=self.evalutor_llm,
             )
 
             return eval_results
@@ -478,7 +498,11 @@ class ChatApp:
         self.selected_embedding_model_provider = new_provider
 
     def process_pdf(
-        self, file, chunk_size: int, chunking_technique: str, selected_embedding_model: str
+        self,
+        file,
+        chunk_size: int,
+        chunking_technique: str,
+        selected_embedding_model: str,
     ) -> Any:
         """Process a new PDF file upload."""
         try:

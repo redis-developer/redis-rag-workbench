@@ -8,9 +8,9 @@ from gradio_pdf import PDF
 from langchain_community.callbacks import get_openai_callback
 
 from demos.workbench.chat_app import ChatApp, generate_feedback
+from shared_components.converters import str_to_bool
 from shared_components.llm_utils import LLMs, calculate_vertexai_cost
 from shared_components.theme_management import load_theme
-from shared_components.converters import str_to_bool
 
 # app to be used in the gradio app
 app = ChatApp()
@@ -79,7 +79,9 @@ def reset_app():
     app.current_pdf_index = None
     app.index_name = None
     app.chunk_size = int(os.environ.get("DEFAULT_CHUNK_SIZE", 500))
-    app.chunking_technique = os.environ.get("DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character")
+    app.chunking_technique = os.environ.get(
+        "DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character"
+    )
     app.chain = None
     app.chat_history = None
     app.N = 0
@@ -132,7 +134,9 @@ def show_history(session_state):
     return history, gr.update(visible=True)
 
 
-def render_first(file, chunk_size, chunking_technique, selected_embedding_model, session_state):
+def render_first(
+    file, chunk_size, chunking_technique, selected_embedding_model, session_state
+):
     """Handle initial PDF upload and rendering."""
     if not session_state:
         session_state = app.initialize_session()
@@ -156,17 +160,11 @@ def get_response(
     history,
     query,
     file,
-    use_semantic_cache,
-    use_reranker,
-    reranker_type,
     distance_threshold,
     top_k,
     llm_model,
     selected_llm_provider,
     llm_temperature,
-    use_chat_history,
-    use_semantic_router,
-    use_ragas,
     session_state,
 ):
     if not session_state:
@@ -180,7 +178,10 @@ def get_response(
         app.update_top_k(top_k)
     if app.distance_threshold != distance_threshold:
         app.update_distance_threshold(distance_threshold)
-    if app.selected_llm != llm_model or app.selected_llm_provider != selected_llm_provider:
+    if (
+        app.selected_llm != llm_model
+        or app.selected_llm_provider != selected_llm_provider
+    ):
         app.update_model(llm_model, selected_llm_provider)
     if app.llm_temperature != llm_temperature:
         app.update_temperature(llm_temperature)
@@ -194,10 +195,14 @@ def get_response(
         end_time = time.time()
 
         is_cache_hit = app.get_last_cache_status()
-        total_cost, num_tokens = (cb.total_cost, cb.total_tokens) if not is_cache_hit else (0, 0)
+        total_cost, num_tokens = (
+            (cb.total_cost, cb.total_tokens) if not is_cache_hit else (0, 0)
+        )
 
         if not is_cache_hit and app.selected_llm_provider == LLMs.vertexai:
-            total_cost = calculate_vertexai_cost(cb.prompt_tokens, cb.completion_tokens, app.selected_llm)
+            total_cost = calculate_vertexai_cost(
+                cb.prompt_tokens, cb.completion_tokens, app.selected_llm
+            )
             cb.total_cost = total_cost
 
         print(f"Cache Hit: {is_cache_hit}")
@@ -220,8 +225,8 @@ def get_response(
         tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
         output = (
             f"⏱️ | Cache Hit: {elapsed_time:.2f} SEC \n\n 💲 | COST ${total_cost:.4f} \n\n "
-            if is_cache_hit else
-            f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS \n\n 💲 | COST ${total_cost:.4f} \n\n "
+            if is_cache_hit
+            else f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS \n\n 💲 | COST ${total_cost:.4f} \n\n "
         )
         if app.use_semantic_router and route and route.name is not None:
             output += f"🚧  | ROUTER: ${route}"
@@ -339,7 +344,7 @@ HEADER = """
 """
 
 
-def update_embedding_model_options(selected_embedding_model_provider, selected_embedding_model):
+def update_embedding_model_options(selected_embedding_model_provider):
     # gradio has a weird thing where you have to include the second variable even if it's unused https://stackoverflow.com/questions/76693922/what-am-i-doing-wrong-with-gradio-dropdown-how-to-dynamically-modify-the-choice
     if app.selected_embedding_model_provider != selected_embedding_model_provider:
         app.update_embedding_model_provider(selected_embedding_model_provider)
@@ -394,13 +399,13 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                     scale=4,
                 )
                 submit_btn = gr.Button("🔍 Submit", elem_classes="chat-button", scale=1)
-                show_history_btn = gr.Button("📜 Chat History", elem_classes="chat-button", scale=2)
+                show_history_btn = gr.Button(
+                    "📜 Chat History", elem_classes="chat-button", scale=2
+                )
 
             with gr.Row(equal_height=True):
                 with gr.Column(min_width=210):
-                    use_ragas = gr.Checkbox(
-                        label="Use RAGAS", value=app.use_ragas
-                    )
+                    use_ragas = gr.Checkbox(label="Use RAGAS", value=app.use_ragas)
                 with gr.Column(min_width=210):
                     use_semantic_router = gr.Checkbox(
                         label="Use Semantic Router", value=app.use_semantic_router
@@ -410,10 +415,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                         label="Use Chat History", value=app.use_chat_history
                     )
 
-            with gr.Accordion(
-                label="Cache Settings",
-                elem_classes=["accordion"]
-            ):
+            with gr.Accordion(label="Cache Settings", elem_classes=["accordion"]):
                 with gr.Row():
                     use_semantic_cache = gr.Checkbox(
                         label="Use Semantic Cache", value=app.use_semantic_cache
@@ -498,7 +500,9 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
                     )
 
                     selected_embedding_model = gr.Dropdown(
-                        choices=app.available_embedding_models[selected_embedding_model_provider.value],
+                        choices=app.available_embedding_models[
+                            selected_embedding_model_provider.value
+                        ],
                         value=app.selected_embedding_model,
                         label="Embedding Model",
                         interactive=True,
@@ -506,7 +510,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
             selected_embedding_model_provider.change(
                 fn=update_embedding_model_options,
-                inputs=[selected_embedding_model_provider, selected_embedding_model],
+                inputs=[selected_embedding_model_provider],
                 outputs=[selected_embedding_model],
             )
 
@@ -568,17 +572,11 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             chatbot,
             txt,
             upload_btn,
-            use_semantic_cache,
-            use_reranker,
-            reranker_type,
             distance_threshold,
             top_k,
             llm_model,
             selected_llm_provider,
             llm_temperature,
-            use_chat_history,
-            use_semantic_router,
-            use_ragas,
             session_state,
         ],
         outputs=[chatbot, txt, feedback_markdown, session_state],
@@ -619,7 +617,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
     pdf_list.select(
         fn=handle_pdf_selection,
         inputs=[pdf_list],
-        outputs=[show_pdf, chatbot, feedback_markdown, pdf_selector_modal]
+        outputs=[show_pdf, chatbot, feedback_markdown, pdf_selector_modal],
     )
 
     # First close the modal when user selects a file
@@ -627,7 +625,13 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
 
     upload_btn.upload(
         fn=render_first,
-        inputs=[upload_btn, chunk_size, chunking_technique, selected_embedding_model, session_state],
+        inputs=[
+            upload_btn,
+            chunk_size,
+            chunking_technique,
+            selected_embedding_model,
+            session_state,
+        ],
         outputs=[show_pdf, chatbot, session_state],
     ).success(
         fn=lambda: (gr.update(visible=False), format_pdf_list(app.search_pdfs())),
@@ -651,7 +655,8 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
             llm_temperature,
             use_chat_history,
             use_semantic_router,
-            use_ragas],
+            use_ragas,
+        ],
     )
 
     use_chat_history.change(
@@ -677,8 +682,6 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
         inputs=[use_ragas],
         outputs=[],
     )
-
-
 
     def check_credentials():
         if not app.credentials_set:
