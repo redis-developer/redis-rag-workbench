@@ -8,6 +8,7 @@ from gradio_pdf import PDF
 from langchain_community.callbacks import get_openai_callback
 
 from demos.workbench.chat_app import ChatApp, generate_feedback
+from shared_components.llm_utils import LLMs, calculate_vertexai_cost
 from shared_components.theme_management import load_theme
 from shared_components.converters import str_to_bool
 
@@ -194,6 +195,10 @@ def get_response(
 
         is_cache_hit = app.get_last_cache_status()
         total_cost, num_tokens = (cb.total_cost, cb.total_tokens) if not is_cache_hit else (0, 0)
+
+        if not is_cache_hit and app.selected_llm_provider == LLMs.vertexai:
+            total_cost = calculate_vertexai_cost(cb.prompt_tokens, cb.completion_tokens, app.selected_llm)
+            cb.total_cost = total_cost
 
         print(f"Cache Hit: {is_cache_hit}")
         if not is_cache_hit:

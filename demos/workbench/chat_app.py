@@ -29,7 +29,7 @@ from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 from ulid import ULID
 
 from shared_components.cached_llm import CachedLLM
-from shared_components.llm_utils import gemini_models, openai_models
+from shared_components.llm_utils import LLMs, gemini_models, openai_models
 from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
 from shared_components.converters import str_to_bool
@@ -37,11 +37,6 @@ from shared_components.converters import str_to_bool
 load_dotenv()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-class LLMs(StrEnum):
-    openai = "openai"
-    azure = "azure-openai"
-    vertexai = "vertexai"
 
 
 class ChatApp:
