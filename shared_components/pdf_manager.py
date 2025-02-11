@@ -59,8 +59,9 @@ class PDFManager:
                 logger.info("Search index already exists")
                 return
             except ResponseError as e:
+                msg = str(e).lower()
                 # Only proceed if the error is about the index not existing
-                if "Unknown index name" not in str(e) or "no such index" not in str(e):
+                if "unknown index name" in msg or "no such index" in msg:
                     logger.info("Creating new search index")
                 else:
                     raise

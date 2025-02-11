@@ -376,7 +376,7 @@ with gr.Blocks(theme=redis_theme, css=redis_styles, title="RAG Workbench") as de
     with gr.Row():
         # Left Half
         with gr.Column(scale=6):
-            chatbot = gr.Chatbot(value=[], elem_id="chatbot")
+            chatbot = gr.Chatbot(value=[], type="tuples", elem_id="chatbot")
             feedback_markdown = gr.Markdown(
                 value="", label="Elapsed Time", visible=True
             )
