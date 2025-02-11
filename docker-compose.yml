@@ -3,7 +3,7 @@ services:
   redis:
     image: "redis:8.0-M03"
     ports:
-      - 6002:6379
+      - 6379:6379
     deploy:
       replicas: 1
       restart_policy:
