@@ -1,40 +1,81 @@
-[tool.poetry]
+[project]
 name = "redis-rag-workbench"
 version = "0.1.0"
 description = "Redis RAG Workbench - A RAG/Redis Playground"
-authors = ["Brian Sam-Bodden <bsb@redis.com>"]
-license = "MIT"
+authors = [
+  { name = "Brian Sam-Bodden", email = "bsb@redis.com" }
+]
 readme = "README.md"
-package-mode = false
+requires-python=">=3.11,<3.13"
+keywords = ["python", "fastapi", "redis", "langchain", "openai", "vertexai", "gemini", "azure"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python"
+]
+dependencies = [
+    "gradio>=5.15.0",
+    "fastapi[standard] (>=0.115.8,<0.116.0)",
+    "uvicorn>=0.34.0",
+    "openai>=1.61.1",
+    "python-dotenv>=1.0.1",
+    "langchain>=0.3.18",
+    "tiktoken>=0.8.0",
+    "pypdf>=5.3.0",
+    "pymupdf>=1.25.3",
+    "PyYAML>=6.0.1",
+    "redis>=5.2.1",
+    "langchain-community>=0.3.17",
+    "langchain-huggingface>=0.1.2",
+    "langchain-openai>=0.3.4",
+    "redisvl>=0.3.9",
+    "cohere>=5.13.12",
+    "ragas>=0.2.13",
+    "langchain-redis>=0.1.2",
+    "langchain-experimental>=0.3.4",
+    "gradio-modal>=0.0.4",
+    "python-ulid>=2.7.0",
+    "pandas==2.2.3",
+    "gradio-pdf>=0.0.22",
+    "langchain-google-vertexai>=2.0.13"
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.13"
-gradio = "^5.15.0"
-fastapi = "^0.115.8"
-uvicorn = "^0.34.0"
-openai = "^1.61.1"
-python-dotenv = "^1.0.1"
-langchain = "^0.3.18"
-tiktoken = "^0.8.0"
-pypdf = "^5.3.0"
-pymupdf = "^1.25.3"
-PyYAML = "^6.0.1"
-redis = "^5.2.1"
-langchain-community = "^0.3.17"
-langchain-huggingface = "^0.1.2"
-langchain-openai = "^0.3.4"
-redisvl = "^0.3.9"
-cohere = "^5.13.12"
-ragas = "^0.2.13"
-langchain-redis = "^0.1.2"
-langchain-experimental = "^0.3.4"
-gradio-modal = "^0.0.4"
-python-ulid = "^2.7.0"
-pandas = "2.2.3"
-gradio-pdf = "^0.0.22"
-langchain-google-vertexai = "^2.0.13"
+[project.urls]
+Repository = "https://github.com/redis-developer/redis-rag-workbench.git"
+"Bug Tracker" = "https://github.com/redis-developer/redis-rag-workbench/issues"
 
+[project.optional-dependencies]
+dev = [
+    "mypy<2.0.0,>=1.8.0",
+    "ruff<1.0.0,>=0.2.2",
+]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.mypy]
+strict = true
+disallow_untyped_calls = false
+exclude = ["venv", ".venv"]
+
+[tool.ruff]
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG001", # unused arguments in functions
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "W191",  # indentation contains tabs
+    "B904",  # Allow raising exceptions without from e, for HTTPException
+]
+
+[tool.ruff.lint.pyupgrade]
+# Preserve types, even if a file imports `from __future__ import annotations`.
+keep-runtime-typing = true
