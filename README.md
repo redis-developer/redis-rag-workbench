@@ -12,6 +12,18 @@
 
 <div></div>
 
+- [Prerequisites](#prerequisites)
+- [Getting started](#getting-started)
+  - [Run in docker](#run-in-docker)
+  - [Run locally outside docker](#run-locally-outside-docker)
+  - [Other useful scripts](#other-useful-scripts)
+- [Using Google VertexAI](#using-google-vertexai)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+- [Connecting to Redis Cloud](#connecting-to-redis-cloud)
+- [Learn more](#learn-more)
+
 
 ## Prerequisites
 
