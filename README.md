@@ -73,6 +73,12 @@ To spin up docker containers:
 make docker
 ```
 
+> This will start the server, and you can access the workbench by navigating to `http://localhost:8000` in your web browser.
+
+<div><img src="assets/workbench_sample.png" style="width: 625px"> </div>
+
+> The first time the application runs, it will have to download model weights from huggingface and may take a few minutes.
+
 ### Run locally outside docker
 
 To run the development server outside of docker:
@@ -106,12 +112,6 @@ Cleaning up files:
 ```bash
 make clean
 ```
-
-> This will start the server, and you can access the workbench by navigating to `http://localhost:8000` in your web browser.
-
-<div><img src="assets/workbench_sample.png" style="width: 625px"> </div>
-
-> The first time the application runs, it will have to download model weights from huggingface and may take a few minutes.
 
 ## Using Google VertexAI
 The Workbench can be used with VertexAI, but requires you to set up your credentials using the `gcloud` CLI. The easiest way to do this is as follows:
