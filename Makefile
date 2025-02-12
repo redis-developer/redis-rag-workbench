@@ -39,3 +39,4 @@ lock: install
 
 clean:             ## Clean build files
 	@rm -rf .venv/ .mypy_cache/ .ruff_cache/ __pycache__/
+	@find . -type d -name __pycache__ -exec rm -r {} \+
