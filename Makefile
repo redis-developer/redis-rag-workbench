@@ -37,6 +37,9 @@ format:            ## Format code
 lock: install
 	@uv lock
 
+update: install
+	@uv sync --upgrade
+
 clean:             ## Clean build files
 	@rm -rf .venv/ .mypy_cache/ .ruff_cache/ 
 	@find . -type d -name __pycache__ -exec rm -r {} \+

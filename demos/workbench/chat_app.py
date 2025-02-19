@@ -3,6 +3,7 @@ import os
 import os.path
 from typing import Any, List, Optional
 
+import gradio as gr
 import vertexai
 from datasets import Dataset
 from google.auth import load_credentials_from_dict
@@ -77,7 +78,6 @@ class ChatApp:
         self.chunking_technique = os.environ.get(
             "DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character"
         )
-        self.chain = None
         self.chat_history = None
         self.N = 0
         self.count = 0
@@ -309,30 +309,39 @@ class ChatApp:
         # First store the PDF and get its index
         return self.process_pdf(file, chunk_size, chunking_technique)
 
-    def build_chain(self, vector_store):
-        retriever = vector_store.as_retriever(search_kwargs={"k": self.top_k})
+    def build_chain(self, history: List[gr.ChatMessage]):
+        retriever = self.vector_store.as_retriever(search_kwargs={"k": self.top_k})
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer.",
-                ),
-                ("system", "Context: {context}"),
-                ("human", "{input}"),
-                (
-                    "system",
-                    "Provide a helpful and accurate answer based on the given context and question:",
-                ),
-            ]
+        messages = [
+            (
+                "system",
+                "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer.",
+            ),
+            ("system", "Context: {context}"),
+        ]
+
+        if self.use_chat_history:
+            for msg in history:
+                messages.append((msg["role"], msg["content"]))
+
+        messages.append(("human", "{input}"))
+        messages.append(
+            (
+                "system",
+                "Provide a helpful and accurate answer based on the given context and question:",
+            )
         )
+
+        prompt = ChatPromptTemplate.from_messages(messages)
 
         combine_docs_chain = create_stuff_documents_chain(self.cached_llm, prompt)
         rag_chain = create_retrieval_chain(retriever, combine_docs_chain)
 
         return rag_chain
 
-    def update_chat_history(self, use_chat_history: bool, session_state):
+    def update_chat_history(
+        self, history: List[gr.ChatMessage], use_chat_history: bool, session_state
+    ):
         self.use_chat_history = use_chat_history
 
         if session_state is None:
@@ -356,7 +365,9 @@ class ChatApp:
                     print(f"DEBUG: Error clearing chat history: {str(e)}")
             session_state["chat_history"] = None
 
-        return session_state
+        history.clear()
+
+        return history, session_state
 
     def get_chat_history(self):
         if self.chat_history and self.use_chat_history:
@@ -384,11 +395,6 @@ class ChatApp:
             self.cached_llm = CachedLLM(self.llm, self.llmcache)
         else:
             self.cached_llm = self.llm
-
-        # update the chain with the new model
-        # TODO: probably a better way to manage the lifecycle than to check the null because that could lead to odd error states
-        if self.vector_store:
-            self.chain = self.build_chain(self.vector_store)
 
     def update_model(self, new_model: str, new_model_provider: str):
         self.selected_llm = new_model
@@ -534,7 +540,6 @@ class ChatApp:
             )
 
             self.update_semantic_cache(self.use_semantic_cache)
-            self.chain = self.build_chain(self.vector_store)
             return self.chain
 
         except Exception as e:
@@ -565,9 +570,6 @@ class ChatApp:
 
             # Update semantic cache if enabled
             self.update_semantic_cache(self.use_semantic_cache)
-
-            # Build the chain
-            self.chain = self.build_chain(self.vector_store)
 
             return True
 
