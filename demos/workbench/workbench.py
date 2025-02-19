@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 
 import gradio as gr
+from dotenv import load_dotenv
 from gradio_modal import Modal
 from gradio_pdf import PDF
 from langchain_community.callbacks import get_openai_callback
@@ -11,6 +12,9 @@ from demos.workbench.chat_app import ChatApp, generate_feedback
 from shared_components.converters import str_to_bool
 from shared_components.llm_utils import LLMs, calculate_vertexai_cost
 from shared_components.theme_management import load_theme
+
+load_dotenv()
+
 
 # app to be used in the gradio app
 app = ChatApp()
@@ -68,6 +72,10 @@ def add_text(history, text: str):
         raise gr.Error("enter text")
     history = history + [(text, "")]
     return history
+
+
+def initialize():
+    app.initialize()
 
 
 def reset_app():

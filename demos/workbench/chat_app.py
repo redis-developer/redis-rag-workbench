@@ -5,7 +5,6 @@ from typing import Any, List, Optional
 
 import vertexai
 from datasets import Dataset
-from dotenv import load_dotenv
 from google.auth import load_credentials_from_dict
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -29,10 +28,9 @@ from ulid import ULID
 from shared_components.cached_llm import CachedLLM
 from shared_components.converters import str_to_bool
 from shared_components.llm_utils import LLMs, gemini_models, openai_models
+from shared_components.logger import logger
 from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
-
-load_dotenv()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -167,6 +165,7 @@ class ChatApp:
         self.llmcache = None
         self.index_name = None
 
+    def initialize(self):
         if self.credentials_set:
             self.initialize_components()
 
@@ -177,17 +176,21 @@ class ChatApp:
         self.pdf_manager = PDFManager(self.redis_url)
 
         # Initialize rerankers
+        logger.info("Initializing rerankers")
         self.RERANKERS = {
             "HuggingFace": HFCrossEncoderReranker("BAAI/bge-reranker-base"),
             "Cohere": CohereReranker(
                 limit=3, api_config={"api_key": self.cohere_api_key}
             ),
         }
+        logger.info("Rerankers initialized")
 
         # Init semantic router
+        logger.info("Initializing semantic router")
         self.semantic_router = SemanticRouter.from_yaml(
             "demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True
         )
+        logger.info("Semantic router initialized")
 
         # Init chat history if use_chat_history is True
         if self.use_chat_history:

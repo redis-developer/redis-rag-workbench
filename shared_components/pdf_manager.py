@@ -1,6 +1,5 @@
 import hashlib
 import json
-import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,9 +12,7 @@ from redis.commands.search.field import NumericField, TagField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.exceptions import ResponseError
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from shared_components.logger import logger
 
 
 @dataclass

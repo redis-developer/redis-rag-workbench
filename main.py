@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 import gradio as gr
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
@@ -5,11 +7,17 @@ from fastapi.staticfiles import StaticFiles
 
 from demos.workbench import workbench
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    workbench.initialize()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
-
 
 favicon_path = "static/favicon.ico"
 
@@ -24,9 +32,3 @@ async def root():
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse(favicon_path)
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="127.0.0.1", port=8000)
