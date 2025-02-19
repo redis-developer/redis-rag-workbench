@@ -29,8 +29,8 @@
 
 1. Make sure you have the following tools available:
    - [Docker](https://www.docker.com/products/docker-desktop/)
-   - Python >= 3.11 and [uv](https://docs.astral.sh/uv/)
-   -  [make](https://www.make.com/en)
+   - [uv](https://docs.astral.sh/uv/)
+   - [make](https://www.make.com/en)
 2. Setup one or more of the following:
    - [OpenAI API](https://platform.openai.com/)
      - You will need an API Key
