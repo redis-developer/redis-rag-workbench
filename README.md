@@ -22,6 +22,8 @@
 - [Contributing](#contributing)
 - [License](#license)
 - [Connecting to Redis Cloud](#connecting-to-redis-cloud)
+- [Troubleshooting](#troubleshooting)
+  - [Apple Silicon (M1+)](#apple-silicon-m1)
 - [Learn more](#learn-more)
 
 
@@ -159,6 +161,16 @@ look something like the following:
 
 ```bash
 REDIS_URL="redis://default:<password>@redis-#####.c###.us-west-2-#.ec2.redns.redis-cloud.com:#####"
+```
+
+## Troubleshooting
+
+### Apple Silicon (M1+)
+
+If you find that `docker` will not work, it's possible you need to add the following line in the Dockerfile (commented out in the Dockerfile for ease-of-use):
+
+```dockerfile
+RUN apt-get update && apt-get install -y build-essential
 ```
 
 ## Learn more
