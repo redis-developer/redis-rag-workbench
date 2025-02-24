@@ -7,49 +7,105 @@ class LLMs(StrEnum):
     vertexai = "vertexai"
 
 
+def sort_models(models_dlist):
+    return sorted(models_dlist, key=lambda d: d["model"])
+
+
+oai_models = sort_models(
+    [
+        {"model": "gpt-4o", "default": False},
+        {"model": "gpt-4o-2024-05-13", "default": False},
+        {"model": "gpt-4", "default": False},
+        {"model": "gpt-4-0314", "default": False},
+        {"model": "gpt-4-0613", "default": False},
+        {"model": "gpt-4-32k", "default": False},
+        {"model": "gpt-4-32k-0314", "default": False},
+        {"model": "gpt-4-32k-0613", "default": False},
+        {"model": "gpt-3.5-turbo", "default": True},
+        {"model": "gpt-3.5-turbo-0301", "default": False},
+        {"model": "gpt-3.5-turbo-0613", "default": False},
+        {"model": "gpt-3.5-turbo-16k", "default": False},
+        {"model": "gpt-3.5-turbo-16k-0613", "default": False},
+        {"model": "gpt-3.5-turbo-instruct", "default": False},
+        {"model": "text-ada-001", "default": False},
+        {"model": "ada", "default": False},
+        {"model": "text-babbage-001", "default": False},
+        {"model": "babbage", "default": False},
+        {"model": "text-curie-001", "default": False},
+        {"model": "curie", "default": False},
+        {"model": "davinci", "default": False},
+        {"model": "text-davinci-003", "default": False},
+        {"model": "text-davinci-002", "default": False},
+        {"model": "code-davinci-002", "default": False},
+        {"model": "code-davinci-001", "default": False},
+        {"model": "code-cushman-002", "default": False},
+        {"model": "code-cushman-001", "default": False},
+    ]
+)
+
+oai_embedding_models = sort_models(
+    [
+        {"model": "text-embedding-ada-002", "default": True},
+        {"model": "text-embedding-3-small", "default": False},
+    ]
+)
+
+vai_models = sort_models(
+    [
+        {"model": "gemini-2.0-flash-thinking-exp-01-21", "default": True},
+        {"model": "gemini-1.5-flash", "default": False},
+        {"model": "gemini-1.5-pro", "default": False},
+        {"model": "gemini-1.0-pro", "default": False},
+    ]
+)
+
+vai_embedding_models = sort_models(
+    [
+        {"model": "text-embedding-004", "default": True},
+        {"model": "textembedding-gecko@003", "default": False},
+        {"model": "textembedding-gecko@001", "default": False},
+    ]
+)
+
+
+def get_models(models_dlist):
+    return [v["model"] for v in models_dlist]
+
+
+def get_default(models_dlist):
+    return next(v["model"] for v in models_dlist if v["default"])
+
+
 def openai_models():
-    return [
-        "gpt-4o",
-        "gpt-4o-2024-05-13",
-        "gpt-4",
-        "gpt-4-0314",
-        "gpt-4-0613",
-        "gpt-4-32k",
-        "gpt-4-32k-0314",
-        "gpt-4-32k-0613",
-        "gpt-3.5-turbo",
-        "gpt-3.5-turbo-0301",
-        "gpt-3.5-turbo-0613",
-        "gpt-3.5-turbo-16k",
-        "gpt-3.5-turbo-16k-0613",
-        "gpt-3.5-turbo-instruct",
-        "text-ada-001",
-        "ada",
-        "text-babbage-001",
-        "babbage",
-        "text-curie-001",
-        "curie",
-        "davinci",
-        "text-davinci-003",
-        "text-davinci-002",
-        "code-davinci-002",
-        "code-davinci-001",
-        "code-cushman-002",
-        "code-cushman-001",
-    ]
+    return get_models(oai_models)
 
 
-def gemini_models():
-    return [
-        "gemini-2.0-flash-thinking-exp-01-21",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-1.0-pro",
-    ]
+def default_openai_model():
+    return get_default(oai_models)
+
+
+def openai_embedding_models():
+    return get_models(oai_embedding_models)
+
+
+def default_openai_embedding_model():
+    return get_default(oai_embedding_models)
+
+
+def vertex_models():
+    return get_models(vai_models)
+
+
+def default_vertex_model():
+    return get_default(vai_models)
 
 
 def vertex_embedding_models():
-    return ["text-embedding-004", "textembedding-gecko@003", "textembedding-gecko@001"]
+    return get_models(vai_embedding_models)
+
+
+def default_vertex_embedding_model():
+    return get_default(vai_embedding_models)
 
 
 # Pricing info: https://cloud.google.com/vertex-ai/generative-ai/pricing

@@ -28,7 +28,17 @@ from ulid import ULID
 
 from shared_components.cached_llm import CachedLLM
 from shared_components.converters import str_to_bool
-from shared_components.llm_utils import LLMs, gemini_models, openai_models
+from shared_components.llm_utils import (
+    LLMs,
+    default_openai_embedding_model,
+    default_openai_model,
+    default_vertex_embedding_model,
+    default_vertex_model,
+    openai_embedding_models,
+    openai_models,
+    vertex_embedding_models,
+    vertex_models,
+)
 from shared_components.logger import logger
 from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
@@ -99,7 +109,7 @@ class ChatApp:
         self.available_llms = {}
 
         if self.openai_api_key is not None:
-            self.available_llms[LLMs.openai] = sorted(openai_models())
+            self.available_llms[LLMs.openai] = openai_models()
 
         if self.azure_openai_deployment is not None:
             self.available_llms[LLMs.azure] = [self.azure_openai_deployment]
@@ -111,48 +121,38 @@ class ChatApp:
             vertexai.init(
                 project=self.gcloud_project_id, credentials=self.vertexai_credentials
             )
-            self.available_llms[LLMs.vertexai] = sorted(gemini_models())
+            self.available_llms[LLMs.vertexai] = vertex_models()
 
         self.llm_model_providers = list(self.available_llms.keys())
 
         self.available_embedding_models = {}
 
         if self.openai_api_key is not None:
-            self.available_embedding_models[LLMs.openai] = [
-                "text-embedding-ada-002",
-                "text-embedding-3-small",
-            ]
+            self.available_embedding_models[LLMs.openai] = openai_embedding_models()
 
         if self.azure_openai_deployment is not None:
-            self.available_embedding_models[LLMs.azure] = [
-                "text-embedding-ada-002",
-                "text-embedding-3-small",
-            ]
+            self.available_embedding_models[LLMs.azure] = openai_embedding_models()
 
         if self.gcloud_credentials is not None:
-            self.available_embedding_models[LLMs.vertexai] = [
-                "text-embedding-004",
-                "textembedding-gecko@003",
-                "textembedding-gecko@001",
-            ]
+            self.available_embedding_models[LLMs.vertexai] = vertex_embedding_models()
 
         self.embedding_model_providers = list(self.available_embedding_models.keys())
 
         if LLMs.openai in self.llm_model_providers:
             self.selected_llm_provider = LLMs.openai
-            self.selected_llm = "gpt-3.5-turbo"
+            self.selected_llm = default_openai_model()
             self.selected_embedding_model_provider = LLMs.openai
-            self.selected_embedding_model = "text-embedding-ada-002"
+            self.selected_embedding_model = default_openai_embedding_model()
         elif LLMs.azure in self.llm_model_providers:
             self.selected_llm_provider = LLMs.azure
             self.selected_llm = self.azure_openai_deployment
             self.selected_embedding_model_provider = LLMs.azure
-            self.selected_embedding_model = "text-embedding-ada-002"
+            self.selected_embedding_model = default_openai_embedding_model()
         elif LLMs.vertexai in self.llm_model_providers:
             self.selected_llm_provider = LLMs.vertexai
-            self.selected_llm = "gemini-1.5-pro"
+            self.selected_llm = default_vertex_model()
             self.selected_embedding_model_provider = LLMs.vertexai
-            self.selected_embedding_model = "text-embedding-004"
+            self.selected_embedding_model = default_vertex_embedding_model()
         else:
             raise Exception(
                 "You need to specify credentials for either OpenAI, Azure, or Google Cloud"

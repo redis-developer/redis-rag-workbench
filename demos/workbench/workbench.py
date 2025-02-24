@@ -11,7 +11,14 @@ from langchain_community.callbacks import get_openai_callback
 
 from demos.workbench.chat_app import ChatApp, generate_feedback
 from shared_components.converters import str_to_bool
-from shared_components.llm_utils import LLMs, calculate_vertexai_cost
+from shared_components.llm_utils import (
+    LLMs,
+    calculate_vertexai_cost,
+    default_openai_embedding_model,
+    default_openai_model,
+    default_vertex_embedding_model,
+    default_vertex_model,
+)
 from shared_components.logger import logger
 from shared_components.theme_management import load_theme
 
@@ -358,18 +365,32 @@ HEADER = """
 def update_embedding_model_options(selected_embedding_model_provider):
     # gradio has a weird thing where you have to include the second variable even if it's unused https://stackoverflow.com/questions/76693922/what-am-i-doing-wrong-with-gradio-dropdown-how-to-dynamically-modify-the-choice
     if app.selected_embedding_model_provider != selected_embedding_model_provider:
-        app.update_embedding_model_provider(selected_embedding_model_provider)
         models = app.available_embedding_models[selected_embedding_model_provider]
-        app.selected_embedding_model = models[0]
-        return gr.Dropdown(choices=models, value=models[0])
+
+        app.update_embedding_model_provider(selected_embedding_model_provider)
+
+        match selected_embedding_model_provider:
+            case LLMs.vertexai:
+                app.selected_embedding_model = default_vertex_embedding_model()
+            case _:
+                app.selected_embedding_model = default_openai_embedding_model()
+
+        return gr.Dropdown(choices=models, value=app.selected_embedding_model)
 
 
 def update_llm_model_options(selected_llm_provider, llm_model):
     if app.selected_llm_provider != selected_llm_provider:
-        app.update_model(llm_model, selected_llm_provider)
         models = app.available_llms[selected_llm_provider]
-        app.selected_llm = models[0]
-        return gr.Dropdown(choices=models, value=models[0])
+
+        match selected_llm_provider:
+            case LLMs.vertexai:
+                llm_model = default_vertex_model()
+            case _:
+                llm_model = default_openai_model()
+
+        app.update_model(llm_model, selected_llm_provider)
+
+        return gr.Dropdown(choices=models, value=llm_model)
 
 
 # gradio FE

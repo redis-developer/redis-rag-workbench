@@ -20,14 +20,12 @@ serve:             ## Run a production server
 	@fastapi run main.py
 
 docker:            ## Rebuild and run docker container
-	@docker compose down
+	@docker compose down app
 	@$(MAKE) docker-prune
 	@docker compose up -d
 
 docker-prune:      ## Prune unused docker images, volumes, and builder cache
-	@docker image prune -a -f
-	@docker volume prune -a -f
-	@docker builder prune -a -f
+	@docker system prune -af
 
 format:            ## Format code
 	@$(MAKE) install
