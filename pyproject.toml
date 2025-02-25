@@ -30,7 +30,7 @@ dependencies = [
     "langchain-openai>=0.3.6",
     "redisvl>=0.4.1",
     "cohere>=5.13.12",
-    "ragas>=0.2.13",
+    "ragas==0.2.6",
     "langchain-redis>=0.2.0",
     "langchain-experimental>=0.3.4",
     "gradio-modal>=0.0.4",
