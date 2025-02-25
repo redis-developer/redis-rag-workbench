@@ -1,12 +1,12 @@
 [project]
 name = "redis-rag-workbench"
-version = "0.1.0"
+version = "0.2.0"
 description = "Redis RAG Workbench - A RAG/Redis Playground"
 authors = [
   { name = "Brian Sam-Bodden", email = "bsb@redis.com" }
 ]
 readme = "README.md"
-requires-python=">=3.11,<3.13"
+requires-python=">=3.11,<3.14"
 keywords = ["python", "fastapi", "redis", "langchain", "openai", "vertexai", "gemini", "azure"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -24,14 +24,14 @@ dependencies = [
     "pypdf>=5.3.0",
     "pymupdf>=1.25.0",
     "PyYAML>=6.0.0",
-    "redis>=5.2.0",
+    "redis>=5.2.1",
     "langchain-community>=0.3.18",
     "langchain-huggingface>=0.1.2",
     "langchain-openai>=0.3.6",
-    "redisvl>=0.3.9",
+    "redisvl>=0.4.1",
     "cohere>=5.13.12",
     "ragas>=0.2.13",
-    "langchain-redis>=0.1.2",
+    "langchain-redis>=0.2.0",
     "langchain-experimental>=0.3.4",
     "gradio-modal>=0.0.4",
     "python-ulid>=2.7.0",
@@ -39,6 +39,7 @@ dependencies = [
     "gradio-pdf>=0.0.22",
     "langchain-google-vertexai>=2.0.13"
 ]
+package-mode = false
 
 [project.urls]
 Repository = "https://github.com/redis-developer/redis-rag-workbench.git"

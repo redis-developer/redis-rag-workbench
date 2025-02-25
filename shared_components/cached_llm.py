@@ -5,6 +5,7 @@ from langchain_core.runnables.base import Runnable
 from langchain_core.runnables.config import RunnableConfig
 
 
+
 class CachedLLM(Runnable):
     def __init__(self, llm, llmcache):
         self.llm = llm

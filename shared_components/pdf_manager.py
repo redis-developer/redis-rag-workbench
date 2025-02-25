@@ -6,11 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from redis import Redis
-from redis.commands.json.path import Path as RedisPath
-from redis.commands.search.field import NumericField, TagField, TextField
-from redis.commands.search.indexDefinition import IndexDefinition, IndexType
-from redis.exceptions import ResponseError
+from redisvl.index import SearchIndex
 
 from shared_components.logger import logger
 
@@ -30,13 +26,14 @@ class PDFMetadata:
 
 
 class PDFManager:
+    index: SearchIndex
+
     def __init__(self, redis_url: str, storage_dir: str = "pdf_storage"):
         logger.info(f"Initializing PDFManager with Redis URL: {redis_url}")
         self.redis_url = redis_url
-        self.redis_client = Redis.from_url(redis_url, decode_responses=True)
         self.storage_dir = Path(storage_dir).resolve()  # Get absolute path
         self._ensure_storage_dir()
-        self._ensure_search_index()
+        self._ensure_search_index(redis_url)
 
     def _ensure_storage_dir(self):
         """Ensure the PDF storage directory exists."""
@@ -50,37 +47,27 @@ class PDFManager:
             logger.error(f"Failed to create storage directory: {e}")
             raise
 
-    def _ensure_search_index(self):
+    def _ensure_search_index(self, redis_url: str):
         """Create the search index for PDF metadata if it doesn't exist."""
+        self.index = SearchIndex.from_dict({
+            "index": {
+                "name": "pdf_manager",
+                "prefix": "pdf",
+                "key_separator": ":",
+                "storage_type": "json"
+            },
+            "fields": [
+                {"name": "filename", "type": "tag"},
+                {"name": "index_name", "type": "text"},
+                {"name": "upload_date", "type": "text"},
+                {"name": "file_size", "type": "numeric"},
+                {"name": "chunking_technique", "type": "text"}
+            ]
+        }, redis_url=redis_url)
         try:
-            # Check if index exists
-            try:
-                self.redis_client.ft("idx:pdf_metadata").info()
-                logger.info("Search index already exists")
-                return
-            except ResponseError as e:
-                msg = str(e).lower()
-                # Only proceed if the error is about the index not existing
-                if "unknown index name" in msg or "no such index" in msg:
-                    logger.info("Creating new search index")
-                else:
-                    raise
-
-            # Create the index
-            schema = (
-                TagField("$.filename", as_name="filename"),
-                TextField("$.index_name", as_name="index_name"),
-                TextField("$.upload_date", as_name="upload_date"),
-                NumericField("$.file_size", as_name="file_size"),
-                TextField("$.chunking_technique", as_name="chunking_technique"),
-            )
-
-            self.redis_client.ft("idx:pdf_metadata").create_index(
-                schema,
-                definition=IndexDefinition(prefix=["pdf:"], index_type=IndexType.JSON),
-            )
-            logger.info("Search index created successfully")
-
+            if not self.index.exists():
+                self.index.create()
+                logger.info("Search index created successfully")
         except Exception as e:
             logger.error(f"Error setting up search index: {e}")
             raise
@@ -126,7 +113,7 @@ class PDFManager:
             file_size = Path(file_path).stat().st_size // 1024
 
             # Create metadata
-            metadata = PDFMetadata(
+            pdf_metadata = PDFMetadata(
                 filename=Path(file.name).name,
                 index_name=self._generate_index_name(file.name),
                 upload_date=datetime.now().isoformat(),
@@ -138,15 +125,12 @@ class PDFManager:
             )
 
             # Store metadata using RedisJSON
-            redis_key = f"pdf:{metadata.index_name}"
-            success = self.redis_client.json().set(
-                redis_key, RedisPath.root_path(), metadata.__dict__
-            )
+            key = self.index.load([pdf_metadata.__dict_], id_field="index_name")
 
-            if not success:
+            if not key:
                 raise Exception("Failed to store metadata in Redis")
 
-            return metadata.index_name
+            return pdf_metadata.index_name
 
         except Exception as e:
             print(f"DEBUG: Error in add_pdf: {str(e)}")
@@ -162,7 +146,7 @@ class PDFManager:
             if not query or query.strip() == "":
                 query = "*"
 
-            results = self.redis_client.ft("idx:pdf_metadata").search(query)
+            results = self.index.search(query)
 
             logger.info(f"Found {len(results.docs)} results")
             pdfs = []
