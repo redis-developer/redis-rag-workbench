@@ -125,7 +125,7 @@ class PDFManager:
             )
 
             # Store metadata using RedisJSON
-            key = self.index.load([pdf_metadata.__dict_], id_field="index_name")
+            key = self.index.load([pdf_metadata.__dict__], id_field="index_name")
 
             if not key:
                 raise Exception("Failed to store metadata in Redis")
@@ -167,7 +167,7 @@ class PDFManager:
     def get_pdf_metadata(self, index_name: str) -> Optional[PDFMetadata]:
         """Retrieve metadata for a specific PDF."""
         try:
-            data = self.redis_client.json().get(f"pdf:{index_name}")
+            data = self.index.client.json().get(f"pdf:{index_name}")
             if data:
                 return PDFMetadata(**data)
             return None
