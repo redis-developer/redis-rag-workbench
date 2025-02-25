@@ -5,15 +5,12 @@ from fastapi.staticfiles import StaticFiles
 
 from demos.workbench import workbench
 
-app = FastAPI()
+app = FastAPI()  # lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
-
 favicon_path = "static/favicon.ico"
-
-app = gr.mount_gradio_app(app, workbench.demo, workbench.path())
 
 
 @app.get("/")
@@ -26,7 +23,5 @@ async def favicon():
     return FileResponse(favicon_path)
 
 
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+workbench.initialize()
+app = gr.mount_gradio_app(app, workbench.ui(), workbench.path())

@@ -1,7 +1,9 @@
 from typing import Any, Optional
+
+from langchain_core.prompt_values import ChatPromptValue, StringPromptValue
 from langchain_core.runnables.base import Runnable
 from langchain_core.runnables.config import RunnableConfig
-from langchain_core.prompt_values import StringPromptValue, ChatPromptValue
+
 
 class CachedLLM(Runnable):
     def __init__(self, llm, llmcache):

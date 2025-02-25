@@ -14,6 +14,7 @@
 # limitations under the License.
 
 """This module contains theming assets."""
+
 import os.path
 from typing import Tuple
 

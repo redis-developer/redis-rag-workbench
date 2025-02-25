@@ -1,12 +1,16 @@
+import json
 import os
 import os.path
 from typing import Any, List, Optional
 
+import gradio as gr
+import vertexai
 from datasets import Dataset
-from dotenv import load_dotenv
+from google.auth import load_credentials_from_dict
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_openai import (
     AzureChatOpenAI,
     AzureOpenAIEmbeddings,
@@ -15,21 +19,29 @@ from langchain_openai import (
 )
 from langchain_redis import RedisChatMessageHistory, RedisVectorStore
 from ragas import evaluate
-from ragas.metrics import answer_relevancy, faithfulness
 from ragas.llms import LangchainLLMWrapper
-from redis.exceptions import ResponseError
+from ragas.metrics import answer_relevancy, faithfulness
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.extensions.router import SemanticRouter
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 from ulid import ULID
 
 from shared_components.cached_llm import CachedLLM
-from shared_components.llm_utils import openai_models
+from shared_components.converters import str_to_bool
+from shared_components.llm_utils import (
+    LLMs,
+    default_openai_embedding_model,
+    default_openai_model,
+    default_vertex_embedding_model,
+    default_vertex_model,
+    openai_embedding_models,
+    openai_models,
+    vertex_embedding_models,
+    vertex_models,
+)
+from shared_components.logger import logger
 from shared_components.pdf_manager import PDFManager, PDFMetadata
 from shared_components.pdf_utils import process_file
-from shared_components.converters import str_to_bool
-
-load_dotenv()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -44,14 +56,20 @@ class ChatApp:
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.cohere_api_key = os.environ.get("COHERE_API_KEY")
 
-        self.azure_openai_api_version = os.environ.get("AZURE_OPENAI_API_VERSION")  # ex: 2024-08-01-preview
-        self.azure_openai_api_key = os.environ.get("AZURE_OPENAI_API_KEY")  # ex: 1234567890abcdef
+        self.azure_openai_api_version = os.environ.get(
+            "AZURE_OPENAI_API_VERSION"
+        )  # ex: 2024-08-01-preview
+        self.azure_openai_api_key = os.environ.get(
+            "AZURE_OPENAI_API_KEY"
+        )  # ex: 1234567890abcdef
         self.azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
         self.azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
 
+        self.gcloud_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        self.gcloud_project_id = os.environ.get("GOOGLE_CLOUD_PROJECT_ID")
+
         required_vars = {
             "REDIS_URL": os.environ.get("REDIS_URL"),
-            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
             "COHERE_API_KEY": os.environ.get("COHERE_API_KEY"),
         }
 
@@ -67,41 +85,78 @@ class ChatApp:
 
         # Initialize non-API dependent variables
         self.chunk_size = int(os.environ.get("DEFAULT_CHUNK_SIZE", 500))
-        self.chunking_technique = os.environ.get("DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character")
-        self.chain = None
+        self.chunking_technique = os.environ.get(
+            "DEFAULT_CHUNKING_TECHNIQUE", "Recursive Character"
+        )
         self.chat_history = None
         self.N = 0
         self.count = 0
-        self.use_semantic_cache = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_CACHE"))
+        self.use_semantic_cache = str_to_bool(
+            os.environ.get("DEFAULT_USE_SEMANTIC_CACHE")
+        )
         self.use_rerankers = str_to_bool(os.environ.get("DEFAULT_USE_RERANKERS"))
         self.top_k = int(os.environ.get("DEFAULT_TOP_K", 3))
-        self.distance_threshold = float(os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30))
+        self.distance_threshold = float(
+            os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30)
+        )
         self.llm_temperature = float(os.environ.get("DEFAULT_LLM_TEMPERATURE", 0.7))
         self.use_chat_history = str_to_bool(os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
-        self.use_semantic_router = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER"))
+        self.use_semantic_router = str_to_bool(
+            os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER")
+        )
         self.use_ragas = str_to_bool(os.environ.get("DEFAULT_USE_RAGAS"))
 
-        self.available_llms = {
-            "openai": sorted(openai_models()),
-        }
+        self.available_llms = {}
+
+        if self.openai_api_key is not None:
+            self.available_llms[LLMs.openai] = openai_models()
 
         if self.azure_openai_deployment is not None:
-            self.available_llms["azure-openai"] = [self.azure_openai_deployment]
+            self.available_llms[LLMs.azure] = [self.azure_openai_deployment]
+
+        if self.gcloud_credentials is not None:
+            self.vertexai_credentials, _ = load_credentials_from_dict(
+                json.loads(self.gcloud_credentials)
+            )
+            vertexai.init(
+                project=self.gcloud_project_id, credentials=self.vertexai_credentials
+            )
+            self.available_llms[LLMs.vertexai] = vertex_models()
 
         self.llm_model_providers = list(self.available_llms.keys())
-        self.selected_llm_provider = "openai"
-        self.selected_llm = "gpt-3.5-turbo"
 
-        self.available_embedding_models = {
-            "openai": ["text-embedding-ada-002", "text-embedding-3-small"],
-        }
+        self.available_embedding_models = {}
+
+        if self.openai_api_key is not None:
+            self.available_embedding_models[LLMs.openai] = openai_embedding_models()
 
         if self.azure_openai_deployment is not None:
-            self.available_embedding_models["azure-openai"] = ["text-embedding-ada-002", "text-embedding-3-small"]
+            self.available_embedding_models[LLMs.azure] = openai_embedding_models()
+
+        if self.gcloud_credentials is not None:
+            self.available_embedding_models[LLMs.vertexai] = vertex_embedding_models()
 
         self.embedding_model_providers = list(self.available_embedding_models.keys())
-        self.selected_embedding_model_provider = "openai"
-        self.selected_embedding_model = "text-embedding-ada-002"
+
+        if LLMs.openai in self.llm_model_providers:
+            self.selected_llm_provider = LLMs.openai
+            self.selected_llm = default_openai_model()
+            self.selected_embedding_model_provider = LLMs.openai
+            self.selected_embedding_model = default_openai_embedding_model()
+        elif LLMs.azure in self.llm_model_providers:
+            self.selected_llm_provider = LLMs.azure
+            self.selected_llm = self.azure_openai_deployment
+            self.selected_embedding_model_provider = LLMs.azure
+            self.selected_embedding_model = default_openai_embedding_model()
+        elif LLMs.vertexai in self.llm_model_providers:
+            self.selected_llm_provider = LLMs.vertexai
+            self.selected_llm = default_vertex_model()
+            self.selected_embedding_model_provider = LLMs.vertexai
+            self.selected_embedding_model = default_vertex_embedding_model()
+        else:
+            raise Exception(
+                "You need to specify credentials for either OpenAI, Azure, or Google Cloud"
+            )
 
         self.llm = None
         self.evalutor_llm = None
@@ -110,6 +165,7 @@ class ChatApp:
         self.llmcache = None
         self.index_name = None
 
+    def initialize(self):
         if self.credentials_set:
             self.initialize_components()
 
@@ -120,15 +176,21 @@ class ChatApp:
         self.pdf_manager = PDFManager(self.redis_url)
 
         # Initialize rerankers
+        logger.info("Initializing rerankers")
         self.RERANKERS = {
             "HuggingFace": HFCrossEncoderReranker("BAAI/bge-reranker-base"),
             "Cohere": CohereReranker(
                 limit=3, api_config={"api_key": self.cohere_api_key}
             ),
         }
+        logger.info("Rerankers initialized")
 
         # Init semantic router
-        self.semantic_router = SemanticRouter.from_yaml("demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True)
+        logger.info("Initializing semantic router")
+        self.semantic_router = SemanticRouter.from_yaml(
+            "demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True
+        )
+        logger.info("Semantic router initialized")
 
         # Init chat history if use_chat_history is True
         if self.use_chat_history:
@@ -142,7 +204,6 @@ class ChatApp:
         self.update_llm()
 
         self.initialized = True
-
 
     def initialize_session(self):
         self.session_id = str(ULID())
@@ -178,41 +239,62 @@ class ChatApp:
 
     def get_llm(self):
         """Get the right LLM based on settings and config."""
-        if self.selected_llm_provider == "azure-openai":
-            try:
-                model = AzureChatOpenAI(
-                    azure_deployment=self.selected_llm,
-                    api_version=self.azure_openai_api_version,
-                    api_key=self.azure_openai_api_key,
-                    azure_endpoint=self.azure_openai_endpoint,
-                    temperature=self.llm_temperature,
-                    max_tokens=None,
-                    timeout=None,
-                    max_retries=2,
+        match self.selected_llm_provider:
+            case LLMs.azure:
+                try:
+                    model = AzureChatOpenAI(
+                        azure_deployment=self.selected_llm,
+                        api_version=self.azure_openai_api_version,
+                        api_key=self.azure_openai_api_key,
+                        azure_endpoint=self.azure_openai_endpoint,
+                        temperature=self.llm_temperature,
+                        max_tokens=None,
+                        timeout=None,
+                        max_retries=2,
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
+                    )
+            case LLMs.vertexai:
+                try:
+                    model = ChatVertexAI(
+                        model=self.selected_llm,
+                        temperature=self.llm_temperature,
+                        max_tokens=None,
+                        stop=None,
+                        max_retries=2,
+                        credentials=self.vertexai_credentials,
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Error initializing VertexAI model: {e} - must provide credentials for deployment"
+                    )
+            case _:
+                model = ChatOpenAI(
+                    model=self.selected_llm,
+                    temperature=0,
                 )
-            except Exception as e:
-                raise ValueError(
-                    f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
-                )
-        else:
-            model = ChatOpenAI(
-                model=self.selected_llm,
-                temperature=0,
-            )
 
         return model
 
     def get_embedding_model(self):
         """Get the right embedding model based on settings and config"""
-        if self.selected_embedding_model_provider == "azure-openai":
-            return AzureOpenAIEmbeddings(
-                model=self.selected_embedding_model,
-                api_key=self.azure_openai_api_key,
-                api_version=self.azure_openai_api_version,
-                azure_endpoint=self.azure_openai_endpoint,
-            )
-        else:
-            return OpenAIEmbeddings(api_key=self.openai_api_key)
+        match self.selected_embedding_model_provider:
+            case LLMs.azure:
+                return AzureOpenAIEmbeddings(
+                    model=self.selected_embedding_model,
+                    api_key=self.azure_openai_api_key,
+                    api_version=self.azure_openai_api_version,
+                    azure_endpoint=self.azure_openai_endpoint,
+                )
+            case LLMs.vertexai:
+                return VertexAIEmbeddings(
+                    model=self.selected_embedding_model,
+                    credentials=self.vertexai_credentials,
+                )
+            case _:
+                return OpenAIEmbeddings(api_key=self.openai_api_key)
 
     def get_reranker_choices(self):
         if self.initialized:
@@ -227,30 +309,39 @@ class ChatApp:
         # First store the PDF and get its index
         return self.process_pdf(file, chunk_size, chunking_technique)
 
-    def build_chain(self, vector_store):
-        retriever = vector_store.as_retriever(search_kwargs={"k": self.top_k})
+    def build_chain(self, history: List[gr.ChatMessage]):
+        retriever = self.vector_store.as_retriever(search_kwargs={"k": self.top_k})
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer.",
-                ),
-                ("system", "Context: {context}"),
-                ("human", "{input}"),
-                (
-                    "system",
-                    "Provide a helpful and accurate answer based on the given context and question:",
-                ),
-            ]
+        messages = [
+            (
+                "system",
+                "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer.",
+            ),
+            ("system", "Context: {context}"),
+        ]
+
+        if self.use_chat_history:
+            for msg in history:
+                messages.append((msg["role"], msg["content"]))
+
+        messages.append(("human", "{input}"))
+        messages.append(
+            (
+                "system",
+                "Provide a helpful and accurate answer based on the given context and question:",
+            )
         )
+
+        prompt = ChatPromptTemplate.from_messages(messages)
 
         combine_docs_chain = create_stuff_documents_chain(self.cached_llm, prompt)
         rag_chain = create_retrieval_chain(retriever, combine_docs_chain)
 
         return rag_chain
 
-    def update_chat_history(self, use_chat_history: bool, session_state):
+    def update_chat_history(
+        self, history: List[gr.ChatMessage], use_chat_history: bool, session_state
+    ):
         self.use_chat_history = use_chat_history
 
         if session_state is None:
@@ -266,11 +357,6 @@ class ChatApp:
                     redis_url=self.redis_url,
                     index_name="idx:chat_history",
                 )
-
-            try:
-                messages_count = len(session_state["chat_history"].messages)
-            except Exception as e:
-                print(f"DEBUG: Error getting chat history length: {str(e)}")
         else:
             if "chat_history" in session_state and session_state["chat_history"]:
                 try:
@@ -279,7 +365,9 @@ class ChatApp:
                     print(f"DEBUG: Error clearing chat history: {str(e)}")
             session_state["chat_history"] = None
 
-        return session_state
+        history.clear()
+
+        return history, session_state
 
     def get_chat_history(self):
         if self.chat_history and self.use_chat_history:
@@ -308,11 +396,6 @@ class ChatApp:
         else:
             self.cached_llm = self.llm
 
-        # update the chain with the new model
-        # TODO: probably a better way to manage the lifecycle than to check the null because that could lead to odd error states
-        if self.vector_store:
-            self.chain = self.build_chain(self.vector_store)
-
     def update_model(self, new_model: str, new_model_provider: str):
         self.selected_llm = new_model
         self.selected_llm_provider = new_model_provider
@@ -332,12 +415,11 @@ class ChatApp:
             redis_url=self.redis_url,
             distance_threshold=self.distance_threshold,
         )
-    
+
     def clear_semantic_cache(self):
         # Always make a new SemanticCache in case use_semantic_cache is False
         semantic_cache = self.make_semantic_cache()
         semantic_cache.clear()
-
 
     def update_semantic_cache(self, use_semantic_cache: bool):
         self.use_semantic_cache = use_semantic_cache
@@ -413,7 +495,7 @@ class ChatApp:
             eval_results = evaluate(
                 dataset=ds,
                 metrics=[faithfulness, answer_relevancy],
-                llm=self.evalutor_llm
+                llm=self.evalutor_llm,
             )
 
             return eval_results
@@ -425,7 +507,11 @@ class ChatApp:
         self.selected_embedding_model_provider = new_provider
 
     def process_pdf(
-        self, file, chunk_size: int, chunking_technique: str, selected_embedding_model: str
+        self,
+        file,
+        chunk_size: int,
+        chunking_technique: str,
+        selected_embedding_model: str,
     ) -> Any:
         """Process a new PDF file upload."""
         try:
@@ -454,7 +540,6 @@ class ChatApp:
             )
 
             self.update_semantic_cache(self.use_semantic_cache)
-            self.chain = self.build_chain(self.vector_store)
             return self.chain
 
         except Exception as e:
@@ -485,9 +570,6 @@ class ChatApp:
 
             # Update semantic cache if enabled
             self.update_semantic_cache(self.use_semantic_cache)
-
-            # Build the chain
-            self.chain = self.build_chain(self.vector_store)
 
             return True
 

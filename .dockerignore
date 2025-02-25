@@ -1,5 +1,9 @@
 .git
 __pycache__
+*.pyc
+.*_cache
+.coverage
+htmlcov
 .venv
 .vscode
 .env
@@ -9,4 +13,4 @@ __pycache__
 Dockerfile
 LICENSE
 README.md
-docker-compose.yml
+compose.yml

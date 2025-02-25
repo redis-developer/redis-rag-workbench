@@ -1,25 +1,24 @@
-from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import json
 import os
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-import logging
 from typing import List, Optional
 
 from redis import Redis
 from redis.commands.json.path import Path as RedisPath
-from redis.commands.search.field import TagField, TextField, NumericField
+from redis.commands.search.field import NumericField, TagField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.exceptions import ResponseError
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from shared_components.logger import logger
+
 
 @dataclass
 class PDFMetadata:
     """Metadata for a stored PDF document."""
+
     filename: str
     index_name: str
     upload_date: str
@@ -28,6 +27,7 @@ class PDFMetadata:
     total_chunks: int
     file_size: int
     file_path: str
+
 
 class PDFManager:
     def __init__(self, redis_url: str, storage_dir: str = "pdf_storage"):
@@ -59,10 +59,12 @@ class PDFManager:
                 logger.info("Search index already exists")
                 return
             except ResponseError as e:
+                msg = str(e).lower()
                 # Only proceed if the error is about the index not existing
-                if "Unknown index name" not in str(e):
+                if "unknown index name" in msg or "no such index" in msg:
+                    logger.info("Creating new search index")
+                else:
                     raise
-                logger.info("Creating new search index")
 
             # Create the index
             schema = (
@@ -70,15 +72,12 @@ class PDFManager:
                 TextField("$.index_name", as_name="index_name"),
                 TextField("$.upload_date", as_name="upload_date"),
                 NumericField("$.file_size", as_name="file_size"),
-                TextField("$.chunking_technique", as_name="chunking_technique")
+                TextField("$.chunking_technique", as_name="chunking_technique"),
             )
 
             self.redis_client.ft("idx:pdf_metadata").create_index(
                 schema,
-                definition=IndexDefinition(
-                    prefix=["pdf:"],
-                    index_type=IndexType.JSON
-                )
+                definition=IndexDefinition(prefix=["pdf:"], index_type=IndexType.JSON),
             )
             logger.info("Search index created successfully")
 
@@ -96,13 +95,13 @@ class PDFManager:
             logger.info(f"Storing PDF at: {file_path}")
 
             # Copy file based on whether it's a file object or NamedString
-            with open(file_path, 'wb') as dest:
-                if hasattr(file, 'read'):
+            with open(file_path, "wb") as dest:
+                if hasattr(file, "read"):
                     # File-like object with read method
                     dest.write(file.read())
                 else:
                     # Gradio's NamedString - copy from the name path
-                    with open(file.name, 'rb') as src:
+                    with open(file.name, "rb") as src:
                         dest.write(src.read())
 
             if not file_path.exists():
@@ -115,7 +114,9 @@ class PDFManager:
             logger.error(f"Failed to store PDF file: {e}")
             raise
 
-    def add_pdf(self, file, chunk_size: int, chunking_technique: str, total_chunks: int) -> str:
+    def add_pdf(
+        self, file, chunk_size: int, chunking_technique: str, total_chunks: int
+    ) -> str:
         """Register a new PDF and store its file."""
         try:
             # Store the physical PDF file
@@ -133,12 +134,14 @@ class PDFManager:
                 chunking_technique=chunking_technique,
                 total_chunks=total_chunks,
                 file_size=file_size,
-                file_path=str(file_path)
+                file_path=str(file_path),
             )
 
             # Store metadata using RedisJSON
             redis_key = f"pdf:{metadata.index_name}"
-            success = self.redis_client.json().set(redis_key, RedisPath.root_path(), metadata.__dict__)
+            success = self.redis_client.json().set(
+                redis_key, RedisPath.root_path(), metadata.__dict__
+            )
 
             if not success:
                 raise Exception("Failed to store metadata in Redis")
@@ -148,7 +151,7 @@ class PDFManager:
         except Exception as e:
             print(f"DEBUG: Error in add_pdf: {str(e)}")
             # Cleanup if needed
-            if 'file_path' in locals() and Path(file_path).exists():
+            if "file_path" in locals() and Path(file_path).exists():
                 Path(file_path).unlink()
             raise
 
