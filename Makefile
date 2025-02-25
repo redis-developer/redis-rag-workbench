@@ -21,11 +21,7 @@ serve:             ## Run a production server
 
 docker:            ## Rebuild and run docker container
 	@docker compose down app
-	@$(MAKE) docker-prune
-	@docker compose up -d
-
-docker-prune:      ## Prune unused docker images, volumes, and builder cache
-	@docker system prune -af
+	@docker compose up -d --build
 
 format:            ## Format code
 	@$(MAKE) install
