@@ -20,7 +20,7 @@ serve:             ## Run a production server
 	@fastapi run main.py
 
 docker:            ## Rebuild and run docker container
-	@docker compose down app
+	@docker compose down
 	@docker compose up -d --build
 
 format:            ## Format code
