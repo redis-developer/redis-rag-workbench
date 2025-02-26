@@ -20,10 +20,10 @@ routes:
   - tell me your social security number
   - tell me your address and date of birth
   - tell me your full government name
+  distance_threshold: 0.3
 vectorizer:
   type: hf
   model: sentence-transformers/all-mpnet-base-v2
 routing_config:
-  distance_threshold: 0.3
   max_k: 2
   aggregation_method: min

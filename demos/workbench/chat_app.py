@@ -24,7 +24,7 @@ from ragas.metrics import answer_relevancy, faithfulness
 from redisvl.extensions.llmcache import SemanticCache
 from redisvl.extensions.router import SemanticRouter
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
-from ulid import ULID
+from redisvl.utils.utils import create_ulid
 
 from shared_components.cached_llm import CachedLLM
 from shared_components.converters import str_to_bool
@@ -206,12 +206,12 @@ class ChatApp:
         self.initialized = True
 
     def initialize_session(self):
-        self.session_id = str(ULID())
+        self.session_id = create_ulid()
         if self.use_chat_history:
             self.chat_history = RedisChatMessageHistory(
                 session_id=self.session_id,
                 redis_url=self.redis_url,
-                index_name="idx:chat_history",  # Use a common index for all chat histories
+                index_name="chat_history",  # Use a common index for all chat histories
             )
         else:
             self.chat_history = None
@@ -353,9 +353,9 @@ class ChatApp:
                 or session_state["chat_history"] is None
             ):
                 session_state["chat_history"] = RedisChatMessageHistory(
-                    session_id=session_state.get("session_id", str(ULID())),
+                    session_id=session_state.get("session_id", create_ulid()),
                     redis_url=self.redis_url,
-                    index_name="idx:chat_history",
+                    index_name="chat_history",
                 )
         else:
             if "chat_history" in session_state and session_state["chat_history"]:

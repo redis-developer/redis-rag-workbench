@@ -41,4 +41,3 @@ ENV PORT 8000
 EXPOSE ${PORT}
 
 CMD ["sh", "-c", "fastapi run --port ${PORT} main.py"]
-
