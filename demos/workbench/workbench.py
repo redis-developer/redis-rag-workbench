@@ -392,11 +392,22 @@ def update_llm_model_options(selected_llm_provider, llm_model):
 
         return gr.Dropdown(choices=models, value=llm_model)
 
+# Force a dark theme
+# TODO: create a light theme
+js_func = """
+function refresh() {
+    const url = new URL(window.location);
 
+    if (url.searchParams.get('__theme') !== 'dark') {
+        url.searchParams.set('__theme', 'dark');
+        window.location.href = url.href;
+    }
+}
+"""
 # gradio FE
 def ui():
     with gr.Blocks(
-        theme=redis_theme, css=redis_styles, title="RAG Workbench"
+        theme=redis_theme, css=redis_styles, title="RAG Workbench", js=js_func
     ) as blocks:
         session_state = gr.State()
 
