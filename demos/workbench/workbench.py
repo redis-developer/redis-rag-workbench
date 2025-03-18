@@ -468,7 +468,7 @@ def ui():
                 with gr.Accordion(label="Cache Settings", elem_classes=["accordion"]):
                     with gr.Row():
                         use_semantic_cache = gr.Checkbox(
-                            label="Use Semantic Cache", value=app.use_semantic_cache
+                            label="Use LangCache", value=app.use_semantic_cache
                         )
                         distance_threshold = gr.Slider(
                             minimum=0.01,
