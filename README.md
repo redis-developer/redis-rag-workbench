@@ -1,6 +1,6 @@
 <div align="center">
 <div><img src="assets/redis-logo.svg" style="width: 130px"> </div>
-<h1>RAG Workbench</h1>
+<h1>RAG workbench</h1>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Language](https://img.shields.io/github/languages/top/redis-developer/redis-rag-workbench)
@@ -8,7 +8,7 @@
 
 </div>
 
-🛠️ **Redis RAG Workbench** is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and **semantic routing**.
+🛠️ **Redis RAG workbench** is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and **semantic routing**.
 
 <div></div>
 
@@ -122,7 +122,7 @@ make clean
 ```
 
 ## Using Google VertexAI
-The Workbench can be used with VertexAI, but requires you to set up your credentials using the `gcloud` CLI. The easiest way to do this is as follows:
+The workbench can be used with VertexAI, but requires you to set up your credentials using the `gcloud` CLI. The easiest way to do this is as follows:
 
 1. Make sure you have a [gcloud project setup](https://cloud.google.com/vertex-ai/docs/start/cloud-environment) with the VertexAI API enabled.
 2. Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install)

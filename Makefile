@@ -2,7 +2,7 @@ MAKEFLAGS += --no-print-directory
 
 ## ---------------------------------------------------------------------------
 ## | The purpose of this Makefile is to provide all the functionality needed |
-## | to install, build, run, and deploy the RAG Workbench.                   |
+## | to install, build, run, and deploy the RAG workbench.                   |
 ## ---------------------------------------------------------------------------
 
 help:              ## Show this help.
@@ -35,5 +35,5 @@ update: install
 	@uv sync --upgrade
 
 clean:             ## Clean build files
-	@rm -rf .venv/ .mypy_cache/ .ruff_cache/ 
+	@rm -rf .venv/ .mypy_cache/ .ruff_cache/
 	@find . -type d -name __pycache__ -exec rm -r {} \+

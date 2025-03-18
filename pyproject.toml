@@ -1,7 +1,7 @@
 [project]
 name = "redis-rag-workbench"
 version = "0.2.0"
-description = "Redis RAG Workbench - A RAG/Redis Playground"
+description = "Redis RAG workbench — a RAG/Redis playground"
 authors = [
   { name = "Brian Sam-Bodden", email = "bsb@redis.com" }
 ]
