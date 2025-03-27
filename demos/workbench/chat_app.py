@@ -63,9 +63,11 @@ class ChatApp:
             "AZURE_OPENAI_API_KEY"
         )  # ex: 1234567890abcdef
         self.azure_openai_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-        self.azure_openai_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
+        self.azure_openai_deployment = os.environ.get(
+            "AZURE_OPENAI_DEPLOYMENT")
 
-        self.gcloud_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        self.gcloud_credentials = os.environ.get(
+            "GOOGLE_APPLICATION_CREDENTIALS")
         self.gcloud_project_id = os.environ.get("GOOGLE_CLOUD_PROJECT_ID")
 
         required_vars = {
@@ -94,13 +96,16 @@ class ChatApp:
         self.use_semantic_cache = str_to_bool(
             os.environ.get("DEFAULT_USE_SEMANTIC_CACHE")
         )
-        self.use_rerankers = str_to_bool(os.environ.get("DEFAULT_USE_RERANKERS"))
+        self.use_rerankers = str_to_bool(
+            os.environ.get("DEFAULT_USE_RERANKERS"))
         self.top_k = int(os.environ.get("DEFAULT_TOP_K", 3))
         self.distance_threshold = float(
             os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30)
         )
-        self.llm_temperature = float(os.environ.get("DEFAULT_LLM_TEMPERATURE", 0.7))
-        self.use_chat_history = str_to_bool(os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
+        self.llm_temperature = float(
+            os.environ.get("DEFAULT_LLM_TEMPERATURE", 0.7))
+        self.use_chat_history = str_to_bool(
+            os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
         self.use_semantic_router = str_to_bool(
             os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER")
         )
@@ -128,15 +133,19 @@ class ChatApp:
         self.available_embedding_models = {}
 
         if self.openai_api_key is not None:
-            self.available_embedding_models[LLMs.openai] = openai_embedding_models()
+            self.available_embedding_models[LLMs.openai] = openai_embedding_models(
+            )
 
         if self.azure_openai_deployment is not None:
-            self.available_embedding_models[LLMs.azure] = openai_embedding_models()
+            self.available_embedding_models[LLMs.azure] = openai_embedding_models(
+            )
 
         if self.gcloud_credentials is not None:
-            self.available_embedding_models[LLMs.vertexai] = vertex_embedding_models()
+            self.available_embedding_models[LLMs.vertexai] = vertex_embedding_models(
+            )
 
-        self.embedding_model_providers = list(self.available_embedding_models.keys())
+        self.embedding_model_providers = list(
+            self.available_embedding_models.keys())
 
         if LLMs.openai in self.llm_model_providers:
             self.selected_llm_provider = LLMs.openai
@@ -171,7 +180,8 @@ class ChatApp:
 
     def initialize_components(self):
         if not self.credentials_set:
-            raise ValueError("Credentials must be set before initializing components")
+            raise ValueError(
+                "Credentials must be set before initializing components")
 
         self.pdf_manager = PDFManager(self.redis_url)
 
@@ -254,7 +264,8 @@ class ChatApp:
                     )
                 except Exception as e:
                     raise ValueError(
-                        f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
+                        f"Error initializing Azure OpenAI model: {
+                            e} - must provide credentials for deployment"
                     )
             case LLMs.vertexai:
                 try:
@@ -268,7 +279,8 @@ class ChatApp:
                     )
                 except Exception as e:
                     raise ValueError(
-                        f"Error initializing VertexAI model: {e} - must provide credentials for deployment"
+                        f"Error initializing VertexAI model: {
+                            e} - must provide credentials for deployment"
                     )
             case _:
                 model = ChatOpenAI(
@@ -299,7 +311,8 @@ class ChatApp:
     def get_reranker_choices(self):
         if self.initialized:
             return list(self.RERANKERS.keys())
-        return ["HuggingFace", "Cohere"]  # Default choices before initialization
+        # Default choices before initialization
+        return ["HuggingFace", "Cohere"]
 
     def __call__(self, file: str, chunk_size: int, chunking_technique: str) -> Any:
         """Process a file upload directly - used by the UI."""
@@ -310,12 +323,17 @@ class ChatApp:
         return self.process_pdf(file, chunk_size, chunking_technique)
 
     def build_chain(self, history: List[gr.ChatMessage]):
-        retriever = self.vector_store.as_retriever(search_kwargs={"k": self.top_k})
+        retriever = self.vector_store.as_retriever(
+            search_kwargs={"k": self.top_k})
 
         messages = [
             (
                 "system",
-                "You are a helpful AI assistant. Use the following pieces of context to answer the user's question. If you don't know the answer, just say that you don't know, don't try to make up an answer.",
+                """You are a helpful AI assistant. Use the following pieces of
+                    context to answer the user's question. If you don't know the
+                answer, just say that you don't know, don't try to make up an
+                    answer. Please be as detailed as possible with your
+                    answers.""",
             ),
             ("system", "Context: {context}"),
         ]
@@ -334,7 +352,8 @@ class ChatApp:
 
         prompt = ChatPromptTemplate.from_messages(messages)
 
-        combine_docs_chain = create_stuff_documents_chain(self.cached_llm, prompt)
+        combine_docs_chain = create_stuff_documents_chain(
+            self.cached_llm, prompt)
         rag_chain = create_retrieval_chain(retriever, combine_docs_chain)
 
         return rag_chain
@@ -448,7 +467,8 @@ class ChatApp:
         reranker = self.RERANKERS[self.reranker_type]
         original_results = [r.page_content for r in results]
 
-        reranked_results, scores = reranker.rank(query=query, docs=original_results)
+        reranked_results, scores = reranker.rank(
+            query=query, docs=original_results)
 
         # Reconstruct the results with reranked order, using fuzzy matching
         reranked_docs = []
@@ -457,7 +477,8 @@ class ChatApp:
                 reranked["content"] if isinstance(reranked, dict) else reranked
             )
             best_match = max(
-                results, key=lambda r: self.similarity(r.page_content, reranked_content)
+                results, key=lambda r: self.similarity(
+                    r.page_content, reranked_content)
             )
             reranked_docs.append(best_match)
 

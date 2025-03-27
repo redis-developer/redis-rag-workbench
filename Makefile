@@ -23,6 +23,12 @@ docker:            ## Rebuild and run docker container
 	@docker compose down
 	@docker compose up -d --build
 
+rs:
+	@docker container restart app
+
+log:
+	@docker logs -f app
+
 format:            ## Format code
 	@$(MAKE) install
 	@ruff check --fix
