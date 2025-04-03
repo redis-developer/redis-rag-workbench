@@ -49,21 +49,24 @@ class PDFManager:
 
     def _ensure_search_index(self, redis_url: str):
         """Create the search index for PDF metadata if it doesn't exist."""
-        self.index = SearchIndex.from_dict({
-            "index": {
-                "name": "pdf_manager",
-                "prefix": "pdf",
-                "key_separator": ":",
-                "storage_type": "json"
+        self.index = SearchIndex.from_dict(
+            {
+                "index": {
+                    "name": "pdf_manager",
+                    "prefix": "pdf",
+                    "key_separator": ":",
+                    "storage_type": "json",
+                },
+                "fields": [
+                    {"name": "filename", "type": "tag"},
+                    {"name": "index_name", "type": "text"},
+                    {"name": "upload_date", "type": "text"},
+                    {"name": "file_size", "type": "numeric"},
+                    {"name": "chunking_technique", "type": "text"},
+                ],
             },
-            "fields": [
-                {"name": "filename", "type": "tag"},
-                {"name": "index_name", "type": "text"},
-                {"name": "upload_date", "type": "text"},
-                {"name": "file_size", "type": "numeric"},
-                {"name": "chunking_technique", "type": "text"}
-            ]
-        }, redis_url=redis_url)
+            redis_url=redis_url,
+        )
         try:
             if not self.index.exists():
                 self.index.create()

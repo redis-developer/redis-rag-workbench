@@ -1,15 +1,15 @@
 import os
+from typing import Any
 
 import fitz
 from gradio_pdf import PDF
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_experimental.text_splitter import SemanticChunker
-from langchain_openai import OpenAIEmbeddings
 from PIL import Image
 
 
-def process_file(file, chunk_size: int, chunking_technique: str):
+def process_file(file, chunk_size: int, chunking_technique: str, embeddings: Any):
     # Load the PDF
     loader = PyPDFLoader(file.name)
     documents = loader.load()
@@ -17,7 +17,7 @@ def process_file(file, chunk_size: int, chunking_technique: str):
     # Choose the appropriate text splitter based on the chunking technique
     if chunking_technique == "Semantic":
         text_splitter = SemanticChunker(
-            OpenAIEmbeddings(),
+            embeddings,
         )
     else:  # Recursive Character Chunking
         text_splitter = RecursiveCharacterTextSplitter(

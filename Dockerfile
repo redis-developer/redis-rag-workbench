@@ -36,7 +36,7 @@ COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync
 
-ENV PORT 8000
+ENV PORT=8000
 
 EXPOSE ${PORT}
 

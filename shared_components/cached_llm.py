@@ -5,7 +5,6 @@ from langchain_core.runnables.base import Runnable
 from langchain_core.runnables.config import RunnableConfig
 
 
-
 class CachedLLM(Runnable):
     def __init__(self, llm, llmcache):
         self.llm = llm
@@ -23,7 +22,9 @@ class CachedLLM(Runnable):
             question = input.text
         elif isinstance(input, ChatPromptValue):
             # Extract the last human message from the chat history
-            human_message = next(m for m in input.messages if m.type == "human")
+            human_message = next(
+                m for m in reversed(input.messages) if m.type == "human"
+            )
             question = human_message.content.strip()
         else:
             raise ValueError(f"Unexpected input type: {type(input)}")

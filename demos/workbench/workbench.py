@@ -106,17 +106,13 @@ def reset_app():
     app.chat_history = None
     app.N = 0
     app.count = 0
-    app.use_semantic_cache = str_to_bool(
-        os.environ.get("DEFAULT_USE_SEMANTIC_CACHE"))
+    app.use_semantic_cache = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_CACHE"))
     app.use_rerankers = str_to_bool(os.environ.get("DEFAULT_USE_RERANKERS"))
     app.top_k = int(os.environ.get("DEFAULT_TOP_K", 3))
-    app.distance_threshold = float(
-        os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30))
+    app.distance_threshold = float(os.environ.get("DEFAULT_DISTANCE_THRESHOLD", 0.30))
     app.llm_temperature = float(os.environ.get("DEFAULT_LLM_TEMPERATURE", 0.7))
-    app.use_chat_history = str_to_bool(
-        os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
-    app.use_semantic_router = str_to_bool(
-        os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER"))
+    app.use_chat_history = str_to_bool(os.environ.get("DEFAULT_USE_CHAT_HISTORY"))
+    app.use_semantic_router = str_to_bool(os.environ.get("DEFAULT_USE_SEMANTIC_ROUTER"))
     app.use_ragas = str_to_bool(os.environ.get("DEFAULT_USE_RAGAS"))
 
     return (
@@ -166,8 +162,7 @@ def render_first(
         session_state = app.initialize_session()
 
     # First process and store the PDF properly
-    app.process_pdf(file, chunk_size, chunking_technique,
-                    selected_embedding_model)
+    app.process_pdf(file, chunk_size, chunking_technique, selected_embedding_model)
 
     # Create PDF viewer
     pdf_viewer = PDF(value=file.name, starting_page=1)
@@ -250,15 +245,15 @@ def get_response(
         tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
         output = (
             f"⏱️ | Cache Hit: {elapsed_time:.2f} SEC \n\n 💲 | COST ${
-                total_cost:.4f} \n\n "
+                total_cost:.4f
+            } \n\n "
             if is_cache_hit
             else f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS \n\n 💲 | COST ${total_cost:.4f} \n\n "
         )
         if app.use_semantic_router and route and route.name is not None:
             output += f"🚧  | ROUTER: ${route}"
 
-        history.append(gr.ChatMessage(
-            role="assistant", content=result["answer"]))
+        history.append(gr.ChatMessage(role="assistant", content=result["answer"]))
         yield history, "", output, session_state
 
         if app.use_ragas:
@@ -435,8 +430,7 @@ def ui():
             cohere_key_input = gr.Textbox(
                 label="COHERE_API_KEY", type="password", value=app.cohere_api_key or ""
             )
-            credentials_status = gr.Markdown(
-                "Please enter the missing credentials.")
+            credentials_status = gr.Markdown("Please enter the missing credentials.")
             submit_credentials_btn = gr.Button("Submit Credentials")
 
         with gr.Row():
@@ -445,8 +439,7 @@ def ui():
         with gr.Row():
             # Left Half
             with gr.Column(scale=6):
-                chatbot = gr.Chatbot(
-                    value=[], type="messages", elem_id="chatbot")
+                chatbot = gr.Chatbot(value=[], type="messages", elem_id="chatbot")
                 feedback_markdown = gr.Markdown(
                     value="", label="Elapsed Time", visible=True
                 )
@@ -467,8 +460,7 @@ def ui():
 
                 with gr.Row(equal_height=True):
                     with gr.Column(min_width=210):
-                        use_ragas = gr.Checkbox(
-                            label="Use RAGAS", value=app.use_ragas)
+                        use_ragas = gr.Checkbox(label="Use RAGAS", value=app.use_ragas)
                     with gr.Column(min_width=210):
                         use_semantic_router = gr.Checkbox(
                             label="Use Semantic Router", value=app.use_semantic_router
@@ -671,8 +663,7 @@ def ui():
         )
 
         select_pdf_btn.click(
-            fn=lambda: (gr.update(visible=True),
-                        format_pdf_list(app.search_pdfs())),
+            fn=lambda: (gr.update(visible=True), format_pdf_list(app.search_pdfs())),
             outputs=[pdf_selector_modal, pdf_list],
         )
 
@@ -698,8 +689,7 @@ def ui():
             ],
             outputs=[show_pdf, chatbot, session_state],
         ).success(
-            fn=lambda: (gr.update(visible=False),
-                        format_pdf_list(app.search_pdfs())),
+            fn=lambda: (gr.update(visible=False), format_pdf_list(app.search_pdfs())),
             outputs=[pdf_selector_modal, pdf_list],
         )
 
@@ -760,8 +750,7 @@ def ui():
             ]
 
         use_semantic_cache.change(
-            fn=app.update_semantic_cache, inputs=[
-                use_semantic_cache], outputs=[]
+            fn=app.update_semantic_cache, inputs=[use_semantic_cache], outputs=[]
         )
 
         submit_credentials_btn.click(
