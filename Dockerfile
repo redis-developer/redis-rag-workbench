@@ -16,8 +16,14 @@ ENV UV_COMPILE_BYTECODE=1
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#caching
 ENV UV_LINK_MODE=copy
 
-# Uncomment for Apple Silicon
-# RUN apt-get update && apt-get install -y build-essential
+# Install required build dependencies for ARM
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libfreetype6-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
