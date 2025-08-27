@@ -26,9 +26,9 @@ from redisvl.extensions.router import SemanticRouter
 from redisvl.utils.rerank import CohereReranker, HFCrossEncoderReranker
 from redisvl.utils.utils import create_ulid
 
-from shared_components.cached_llm import CachedLLM
-from shared_components.converters import str_to_bool
-from shared_components.llm_utils import (
+from workbench.shared.cached_llm import CachedLLM
+from workbench.shared.converters import str_to_bool
+from workbench.shared.llm_utils import (
     LLMs,
     default_openai_embedding_model,
     default_openai_model,
@@ -39,9 +39,9 @@ from shared_components.llm_utils import (
     vertex_embedding_models,
     vertex_models,
 )
-from shared_components.logger import logger
-from shared_components.pdf_manager import PDFManager, PDFMetadata
-from shared_components.pdf_utils import process_file
+from workbench.shared.logger import logger
+from workbench.shared.pdf_manager import PDFManager, PDFMetadata
+from workbench.shared.pdf_utils import process_file
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -50,7 +50,6 @@ class ChatApp:
     def __init__(self) -> None:
         self.session_id = None
         self.pdf_manager = None
-        self.current_pdf_index = None
 
         self.redis_url = os.environ.get("REDIS_URL")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
@@ -175,6 +174,17 @@ class ChatApp:
 
         self.pdf_manager = PDFManager(self.redis_url)
 
+        # Perform data reconciliation to ensure consistency
+        logger.info("Performing data reconciliation...")
+        try:
+            fixed, removed, orphaned = self.pdf_manager.reconcile_data()
+            if fixed > 0 or removed > 0 or orphaned > 0:
+                logger.info(f"Reconciliation summary - Fixed: {fixed}, Removed: {removed}, Orphaned cleaned: {orphaned}")
+            else:
+                logger.info("Data reconciliation complete - no issues found")
+        except Exception as e:
+            logger.warning(f"Data reconciliation failed: {e}")
+
         # Initialize rerankers
         logger.info("Initializing rerankers")
         self.RERANKERS = {
@@ -188,7 +198,7 @@ class ChatApp:
         # Init semantic router
         logger.info("Initializing semantic router")
         self.semantic_router = SemanticRouter.from_yaml(
-            "demos/workbench/router.yaml", redis_url=self.redis_url, overwrite=True
+            "workbench/router.yaml", redis_url=self.redis_url, overwrite=True
         )
         logger.info("Semantic router initialized")
 
@@ -252,9 +262,7 @@ class ChatApp:
                     )
                 except Exception as e:
                     raise ValueError(
-                        f"Error initializing Azure OpenAI model: {
-                            e
-                        } - must provide credentials for deployment"
+                        f"Error initializing Azure OpenAI model: {e} - must provide credentials for deployment"
                     )
             case LLMs.vertexai:
                 try:
@@ -268,9 +276,7 @@ class ChatApp:
                     )
                 except Exception as e:
                     raise ValueError(
-                        f"Error initializing VertexAI model: {
-                            e
-                        } - must provide credentials for deployment"
+                        f"Error initializing VertexAI model: {e} - must provide credentials for deployment"
                     )
             case _:
                 model = ChatOpenAI(
@@ -527,67 +533,42 @@ class ChatApp:
         """Process a new PDF file upload."""
         try:
             print(f"Using selected_embedding_model: {selected_embedding_model}")
-            # Create the vector store using the same index
             embeddings = self.get_embedding_model()
-            # First process the file to get documents
-            documents, _ = process_file(
+            
+            # Let PDFManager handle complete processing
+            self.index_name = self.pdf_manager.process_pdf_complete(
                 file, chunk_size, chunking_technique, embeddings
             )
-
-            # Store the PDF and metadata first
-            self.current_pdf_index = self.pdf_manager.add_pdf(
-                file=file,
-                chunk_size=chunk_size,
-                chunking_technique=chunking_technique,
-                total_chunks=len(documents),
-            )
-
-            # Set the index name from the PDF manager
-            self.index_name = self.current_pdf_index
             self.selected_embedding_model = selected_embedding_model
-
-            self.vector_store = RedisVectorStore.from_documents(
-                documents,
-                embeddings,
-                redis_url=self.redis_url,
-                index_name=self.index_name,
-            )
-
+            
+            # Load the vector store that was just created
+            self.vector_store = self.pdf_manager.load_pdf_complete(self.index_name, embeddings)
             self.update_semantic_cache(self.use_semantic_cache)
 
         except Exception as e:
-            print(f"Error during process_pdf: {e}")
+            logger.error(f"Error during process_pdf: {e}")
+            raise
 
     def load_pdf(self, index_name: str) -> bool:
         """Load a previously processed PDF."""
         try:
-            # Get the metadata
-            metadata = self.pdf_manager.get_pdf_metadata(index_name)
-            if not metadata:
-                return False
-
-            # Set the current state
-            self.current_pdf_index = index_name
-            self.index_name = index_name
-            self.chunk_size = metadata.chunk_size
-            self.chunking_technique = metadata.chunking_technique
-
-            # Set up vector store with embeddings as first argument
-            # TODO: the embedding model probably needs to get store in the index for the loading option
             embeddings = self.get_embedding_model()
-            self.vector_store = RedisVectorStore(
-                embeddings,
-                redis_url=self.redis_url,
-                index_name=self.current_pdf_index,
-            )
+            
+            # Let PDFManager handle complete loading (with reprocessing if needed)
+            self.vector_store = self.pdf_manager.load_pdf_complete(index_name, embeddings)
+            
+            # Update app state
+            self.index_name = index_name
+            metadata = self.pdf_manager.get_pdf_metadata(index_name)
+            if metadata:
+                self.chunk_size = metadata.chunk_size
+                self.chunking_technique = metadata.chunking_technique
 
-            # Update semantic cache if enabled
             self.update_semantic_cache(self.use_semantic_cache)
-
             return True
 
         except Exception as e:
-            print(f"ERROR: Failed to load PDF {index_name}: {str(e)}")
+            logger.error(f"Failed to load PDF {index_name}: {e}")
             return False
 
     def search_pdfs(self, query: str = "") -> List[PDFMetadata]:
