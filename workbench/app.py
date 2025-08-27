@@ -9,9 +9,9 @@ from gradio_modal import Modal
 from gradio_pdf import PDF
 from langchain_community.callbacks import get_openai_callback
 
-from demos.workbench.chat_app import ChatApp, generate_feedback
-from shared_components.converters import str_to_bool
-from shared_components.llm_utils import (
+from workbench.chat_app import ChatApp, generate_feedback
+from workbench.shared.converters import str_to_bool
+from workbench.shared.llm_utils import (
     LLMs,
     calculate_vertexai_cost,
     default_openai_embedding_model,
@@ -19,8 +19,8 @@ from shared_components.llm_utils import (
     default_vertex_embedding_model,
     default_vertex_model,
 )
-from shared_components.logger import logger
-from shared_components.theme_management import load_theme
+from workbench.shared.logger import logger
+from workbench.shared.theme_management import load_theme
 
 load_dotenv()
 
@@ -244,9 +244,7 @@ def get_response(
         # Prepare the output
         tokens_per_sec = num_tokens / elapsed_time if elapsed_time > 0 else 0
         output = (
-            f"⏱️ | Cache Hit: {elapsed_time:.2f} SEC \n\n 💲 | COST ${
-                total_cost:.4f
-            } \n\n "
+            f"⏱️ | Cache Hit: {elapsed_time:.2f} SEC \n\n 💲 | COST ${total_cost:.4f} \n\n "
             if is_cache_hit
             else f"⏱️ | LLM: {elapsed_time:.2f} SEC | {tokens_per_sec:.2f} TOKENS/SEC | {num_tokens} TOKENS \n\n 💲 | COST ${total_cost:.4f} \n\n "
         )
@@ -334,13 +332,13 @@ def handle_pdf_selection(evt: gr.SelectData, pdf_list):
         return None, [], f"Error loading PDF: {str(e)}", gr.update(visible=False)
 
 
-def handle_new_upload(file, chunk_size, chunking_technique, session_state):
+def handle_new_upload(file, chunk_size, chunking_technique, selected_embedding_model, session_state):
     """Handle new PDF upload."""
     if not file:
         return None, [], None, gr.update(visible=True)
 
     # Process the file using the app's backend
-    app.process_pdf(file, chunk_size, chunking_technique)
+    app.process_pdf(file, chunk_size, chunking_technique, selected_embedding_model)
 
     # Create PDF viewer
     pdf_viewer = PDF(value=file.name, starting_page=1)
@@ -415,6 +413,8 @@ def ui():
         theme=redis_theme, css=redis_styles, title="RAG workbench", js=js_func
     ) as blocks:
         session_state = gr.State()
+        # Hidden component that always provides None for file parameter
+        hidden_file = gr.State(None)
 
         # Add Modal for credentials input
         with Modal(visible=False) as credentials_modal:
@@ -630,7 +630,7 @@ def ui():
             inputs=[
                 chatbot,
                 txt,
-                upload_btn,
+                hidden_file,  # file parameter - using None since PDF is loaded via current_pdf_index
                 distance_threshold,
                 top_k,
                 llm_model,
@@ -651,7 +651,7 @@ def ui():
             inputs=[
                 chatbot,
                 txt,
-                upload_btn,
+                hidden_file,  # file parameter - using None since PDF is loaded via current_pdf_index
                 distance_threshold,
                 top_k,
                 llm_model,
@@ -671,11 +671,6 @@ def ui():
             fn=handle_pdf_selection,
             inputs=[pdf_list],
             outputs=[show_pdf, chatbot, feedback_markdown, pdf_selector_modal],
-        )
-
-        # First close the modal when user selects a file
-        upload_btn.click(
-            fn=lambda: gr.update(visible=False), outputs=pdf_selector_modal
         )
 
         upload_btn.upload(

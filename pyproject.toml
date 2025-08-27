@@ -28,16 +28,18 @@ dependencies = [
     "langchain-community>=0.3.18",
     "langchain-huggingface>=0.1.2",
     "langchain-openai>=0.3.6",
-    "redisvl>=0.4.1",
     "cohere>=5.13.12",
     "ragas==0.2.6",
-    "langchain-redis>=0.2.0",
     "langchain-experimental>=0.3.4",
     "gradio-modal>=0.0.4",
     "python-ulid>=2.7.0",
     "pandas==2.2.3",
     "gradio-pdf>=0.0.22",
-    "langchain-google-vertexai>=2.0.13"
+    "langchain-google-vertexai>=2.0.13",
+    "hf-xet>=1.1.8",
+    "redisvl>=0.8.2",
+    "sentence-transformers>=5.1.0",
+    "langchain-redis>=0.2.3",
 ]
 package-mode = false
 

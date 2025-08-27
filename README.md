@@ -1,31 +1,58 @@
 <div align="center">
 <div><img src="assets/redis-logo.svg" style="width: 130px"> </div>
-<h1>RAG workbench</h1>
+<h1>🚀 Redis RAG Workbench</h1>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Language](https://img.shields.io/github/languages/top/redis-developer/redis-rag-workbench)
 ![GitHub last commit](https://img.shields.io/github/last-commit/redis-developer/redis-rag-workbench)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green)
+
+**🎯 The ultimate RAG development playground powered by Redis**
 
 </div>
 
-🛠️ **Redis RAG workbench** is a development playground for exploring Retrieval-Augmented Generation (RAG) techniques with Redis. Upload a PDF and begin building a RAG app to chat with the document, taking full advantage of Redis features like **vector search**, **semantic caching**, **LLM memory**, and **semantic routing**.
+🔥 **Redis RAG Workbench** is your go-to development environment for building and experimenting with **Retrieval-Augmented Generation (RAG)** applications. Drop in a PDF, chat with your documents, and harness the full power of Redis for **lightning-fast vector search**, **intelligent semantic caching**, **persistent LLM memory**, and **smart semantic routing**.
 
-<div></div>
+✨ **What makes this special?**
+- 🚀 **One-command setup** - Get started in seconds with `make setup`
+- ⚡ **Multi-LLM support** - OpenAI, Azure OpenAI, Google VertexAI
+- 🎯 **Redis-powered** - Vector search, caching, and memory management
+- 🐳 **Docker ready** - Consistent development across all environments
+- 🔧 **Developer-first** - Hot reload, code formatting, and quality checks built-in
 
+---
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
-- [Getting started](#getting-started)
-  - [Run in docker](#run-in-docker)
-  - [Run locally outside docker](#run-locally-outside-docker)
-  - [Other useful scripts](#other-useful-scripts)
+- [Getting Started](#getting-started)
+  - [Available Commands](#available-commands)
+  - [Development Workflows](#development-workflows)
+  - [Environment Configuration](#environment-configuration)
 - [Using Google VertexAI](#using-google-vertexai)
 - [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
 - [Connecting to Redis Cloud](#connecting-to-redis-cloud)
 - [Troubleshooting](#troubleshooting)
-  - [Apple Silicon (M1+)](#apple-silicon-m1)
-- [Learn more](#learn-more)
+- [Contributing](#contributing)
+- [License](#license)
+- [Learn More](#learn-more)
 
+
+## Quick Start
+
+**Get up and running in 3 commands:**
+
+```bash
+git clone https://github.com/redis-developer/redis-rag-workbench.git
+cd redis-rag-workbench
+make setup && make dev
+```
+
+Then visit `http://localhost:8000` and start chatting with your PDFs! 🎉
+
+---
 
 ## Prerequisites
 
@@ -43,83 +70,76 @@
 3. Get a [Cohere API key](https://cohere.com/) (for optional reranking features)
 
 
-## Getting started
+## Getting Started
 
-Clone the repository:
-
-```bash
-git clone https://github.com/redis-developer/redis-rag-workbench.git
-cd redis-rag-workbench
-```
-
-Copy and edit the `.env` file:
-
-```bash
-cp .env.example .env
-```
-
-Your `.env` file should contain your Redis connection string as well as necessary API keys based on which platform(s) you want to use.
-
-Your `.env.docker` file will look similar to `.env`, but should use the appropriate docker internal URLs. Here is
-an example:
-
-```bash
-REDIS_URL="redis://redis:6379"
-```
-
-### Run in docker
-
-To spin up docker containers:
-
-```bash
-make docker
-```
-
-> This will start the server, and you can access the workbench by navigating to `http://localhost:8000` in your web browser.
+> 🌐 Access the workbench at `http://localhost:8000` in your web browser.
 
 <div><img src="assets/workbench_sample.png" style="width: 625px"> </div>
 
-> The first time the application runs, it will have to download model weights from huggingface and may take a few minutes.
+> ⏱️ First run may take a few minutes to download model weights from Hugging Face.
 
-### Run locally outside docker
+### Available Commands
 
-To run the server outside of docker you need to first create a `.venv`:
+| Command | Description |
+|---------|-------------|
+| `make setup` | Initial project setup (install deps & create .env) |
+| `make install` | Install/sync dependencies |
+| `make dev` | Start development server with hot reload |
+| `make serve` | Start production server |
+| `make format` | Format and lint code |
+| `make check` | Run code quality checks without fixing |
+| `make docker` | Rebuild and run Docker containers |
+| `make docker-up` | Start Docker services (without rebuild) |
+| `make docker-logs` | View Docker application logs |
+| `make docker-down` | Stop Docker services |
+| `make clean` | Clean build artifacts and caches |
 
+### Development Workflows
+
+**Local Development:**
 ```bash
-make install && source .venv/bin/activate
+make setup           # One-time setup
+# Edit .env with your API keys
+make dev             # Start development server
 ```
 
-From then on, you can run a dev server:
-
+**Docker Development:**
 ```bash
-make dev
+make setup           # One-time setup  
+# Edit .env with your API keys
+make docker          # Build and start containers
+make docker-logs     # View logs
 ```
 
-Or a production server:
-
+**Docker Management:**
 ```bash
-make serve
+make docker-up       # Start existing containers
+make docker-down     # Stop all services
+make docker-logs     # Follow application logs
 ```
 
-### Other useful scripts
-
-Get help for all `make` commands:
-
+**Code Quality:**
 ```bash
-make
+make format          # Auto-fix formatting issues
+make check           # Check code quality without changes
 ```
 
-Formatting code:
+### Environment Configuration
+
+The project uses a single `.env` file for configuration. Copy from the example:
 
 ```bash
-make format
+cp .env-example .env
 ```
 
-Cleaning up files:
+Required variables:
+- `REDIS_URL` - Redis connection (auto-configured for Docker)
+- `COHERE_API_KEY` - For reranking features
 
-```bash
-make clean
-```
+At least one LLM provider:
+- `OPENAI_API_KEY` - OpenAI API access
+- `AZURE_OPENAI_*` - Azure OpenAI configuration  
+- `GOOGLE_APPLICATION_CREDENTIALS` - Google VertexAI credentials
 
 ## Using Google VertexAI
 The workbench can be used with VertexAI, but requires you to set up your credentials using the `gcloud` CLI. The easiest way to do this is as follows:
@@ -156,24 +176,25 @@ To connect to a Redis Cloud database, log into the console and find the followin
 1. Your `password` (either setup through Data Access Control, or available in the `Security` section of the database
    page.
 
-Combine the above values into a connection string and put it in your `.env` and `.env.docker` accordingly. It should
-look something like the following:
+Combine the above values into a connection string and put it in your `.env` file. It should look something like the following:
 
 ```bash
 REDIS_URL="redis://default:<password>@redis-#####.c###.us-west-2-#.ec2.redns.redis-cloud.com:#####"
 ```
 
+> 📝 **Note:** When using Docker, the Redis URL is automatically configured to use the internal Docker network. Your `.env` file can contain either a local Redis URL (`redis://localhost:6379`) or a Redis Cloud URL - both will work with Docker.
+
 ## Troubleshooting
 
 ### Apple Silicon (M1+)
 
-If you find that `docker` will not work, it's possible you need to add the following line in the Dockerfile (commented out in the Dockerfile for ease-of-use):
+If you find that `docker` will not work, it's possible you need to add the following line in the `docker/Dockerfile` (commented out in the Dockerfile for ease-of-use):
 
 ```dockerfile
 RUN apt-get update && apt-get install -y build-essential
 ```
 
-## Learn more
+## Learn More
 
 To learn more about Redis, take a look at the following resources:
 

@@ -1,0 +1,37 @@
+uv add name: redis-rag-workbench
+
+services:
+  redis:
+    image: redis/redis-stack-server:latest
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  app:
+    container_name: app
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # Override Redis URL for Docker internal networking
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - ../.env
+    volumes:
+      # Development volume mounts for hot reloading
+      - ../assets:/app/assets
+      - ../workbench:/app/workbench
+      - ../data:/app/data
+      - ../static:/app/static
+      - ../main.py:/app/main.py
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
