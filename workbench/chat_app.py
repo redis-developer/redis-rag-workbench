@@ -50,6 +50,7 @@ class ChatApp:
     def __init__(self) -> None:
         self.session_id = None
         self.pdf_manager = None
+        self.current_pdf_index = None  # Initialize the missing attribute
 
         self.redis_url = os.environ.get("REDIS_URL")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
@@ -534,13 +535,14 @@ class ChatApp:
         try:
             print(f"Using selected_embedding_model: {selected_embedding_model}")
             embeddings = self.get_embedding_model()
-            
+
             # Let PDFManager handle complete processing
             self.index_name = self.pdf_manager.process_pdf_complete(
                 file, chunk_size, chunking_technique, embeddings
             )
+            self.current_pdf_index = self.index_name  # Set current_pdf_index
             self.selected_embedding_model = selected_embedding_model
-            
+
             # Load the vector store that was just created
             self.vector_store = self.pdf_manager.load_pdf_complete(self.index_name, embeddings)
             self.update_semantic_cache(self.use_semantic_cache)
@@ -553,12 +555,13 @@ class ChatApp:
         """Load a previously processed PDF."""
         try:
             embeddings = self.get_embedding_model()
-            
+
             # Let PDFManager handle complete loading (with reprocessing if needed)
             self.vector_store = self.pdf_manager.load_pdf_complete(index_name, embeddings)
-            
+
             # Update app state
             self.index_name = index_name
+            self.current_pdf_index = index_name  # Set current_pdf_index
             metadata = self.pdf_manager.get_pdf_metadata(index_name)
             if metadata:
                 self.chunk_size = metadata.chunk_size

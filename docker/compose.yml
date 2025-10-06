@@ -1,4 +1,4 @@
-uv add name: redis-rag-workbench
+name: redis-rag-workbench
 
 services:
   redis:
